@@ -6,6 +6,7 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
+import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -18,6 +19,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -367,11 +370,35 @@ public class MainActivity extends AppCompatActivity {
     private void updateStatus() {
         if (statusText == null) return;
 
-        String enabledIMEs = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_INPUT_METHODS);
-        boolean enabled = enabledIMEs != null && enabledIMEs.contains(getPackageName());
+        // Use InputMethodManager instead of Settings.Secure.ENABLED_INPUT_METHODS
+        // (blocked for targetSdk >= 34 on Android 14+)
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        boolean enabled = false;
+        boolean isCurrent = false;
 
-        String currentIME = Settings.Secure.getString(getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
-        boolean isCurrent = currentIME != null && currentIME.contains(getPackageName());
+        if (imm != null) {
+            String myId = getPackageName() + "/" + CustomKeyboardService.class.getName();
+
+            // Check if our IME is in the enabled list
+            List<InputMethodInfo> enabledImes = imm.getEnabledInputMethodList();
+            for (InputMethodInfo imi : enabledImes) {
+                if (imi.getId().equals(myId)) {
+                    enabled = true;
+                    break;
+                }
+            }
+
+            // Check if we're the current default IME (wrapped in try-catch for API 34+)
+            try {
+                String currentId = Settings.Secure.getString(
+                    getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+                isCurrent = currentId != null && currentId.equals(myId);
+            } catch (SecurityException e) {
+                // On API 34+, DEFAULT_INPUT_METHOD may also be unreadable.
+                // Fall back: if enabled, assume "enabled but not selected"
+                isCurrent = false;
+            }
+        }
 
         if (isCurrent) {
             statusText.setText("✅ Keyboard is active and ready!");
