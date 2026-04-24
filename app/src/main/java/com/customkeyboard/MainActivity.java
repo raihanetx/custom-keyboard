@@ -37,7 +37,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void buildUI() {
         ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(Color.parseColor("#1A1A2E"));
+        scrollView.setBackgroundColor(Color.parseColor("#1C1C1E"));
 
         LinearLayout main = new LinearLayout(this);
         main.setOrientation(LinearLayout.VERTICAL);
@@ -45,18 +45,18 @@ public class MainActivity extends AppCompatActivity {
         main.setPadding(pad, pad, pad, pad);
 
         // ============ HEADER ============
-        addEmoji(main, "⌨️", 48);
+        addEmoji(main, "⌨️", 42);
         addTitle(main, "Custom Keyboard");
-        addSubtitle(main, "Voice typing • Clipboard • Bangla translation • Themes");
+        addSubtitle(main, "Voice • Clipboard • Bangla • Themes");
 
         // ============ STATUS ============
         statusText = new TextView(this);
-        statusText.setTextSize(15);
+        statusText.setTextSize(14);
         statusText.setPadding(0, dp(16), 0, dp(16));
         main.addView(statusText);
 
         // ============ SETUP BUTTONS ============
-        addButton(main, "🔧  Enable Keyboard", "#E94560", v -> {
+        addButton(main, "Enable Keyboard", "#5B6EF5", v -> {
             try {
                 startActivity(new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS));
             } catch (Exception e) {
@@ -64,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        addButton(main, "🔄  Switch to Keyboard", "#16213E", v -> {
+        addButton(main, "Switch to Keyboard", "#2C2C2E", v -> {
             try {
                 InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (imm != null) imm.showInputMethodPicker();
@@ -290,8 +290,8 @@ public class MainActivity extends AppCompatActivity {
     private void addTitle(LinearLayout parent, String text) {
         TextView tv = new TextView(this);
         tv.setText(text);
-        tv.setTextSize(26);
-        tv.setTextColor(Color.parseColor("#E94560"));
+        tv.setTextSize(24);
+        tv.setTextColor(Color.parseColor("#5B6EF5"));
         tv.setTypeface(null, Typeface.BOLD);
         tv.setPadding(0, dp(4), 0, dp(4));
         parent.addView(tv);
@@ -300,8 +300,8 @@ public class MainActivity extends AppCompatActivity {
     private void addSubtitle(LinearLayout parent, String text) {
         TextView tv = new TextView(this);
         tv.setText(text);
-        tv.setTextSize(13);
-        tv.setTextColor(Color.parseColor("#AAAAAA"));
+        tv.setTextSize(12);
+        tv.setTextColor(Color.parseColor("#8E8E93"));
         tv.setPadding(0, 0, 0, dp(8));
         parent.addView(tv);
     }
@@ -309,8 +309,8 @@ public class MainActivity extends AppCompatActivity {
     private void addSectionTitle(LinearLayout parent, String text) {
         TextView tv = new TextView(this);
         tv.setText(text);
-        tv.setTextSize(18);
-        tv.setTextColor(Color.parseColor("#E94560"));
+        tv.setTextSize(16);
+        tv.setTextColor(Color.parseColor("#F2F2F7"));
         tv.setTypeface(null, Typeface.BOLD);
         tv.setPadding(0, dp(16), 0, dp(8));
         parent.addView(tv);
@@ -318,7 +318,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void addDivider(LinearLayout parent) {
         View divider = new View(this);
-        divider.setBackgroundColor(Color.parseColor("#2A2A4A"));
+        divider.setBackgroundColor(Color.parseColor("#2C2C2E"));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
         lp.setMargins(0, dp(12), 0, dp(12));
@@ -345,7 +345,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(4), dp(4), dp(4), dp(4));
-        box.setBackgroundColor(Color.parseColor("#16213E"));
+        box.setBackgroundColor(Color.parseColor("#2C2C2E"));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, dp(4), 0, dp(4));
@@ -359,8 +359,8 @@ public class MainActivity extends AppCompatActivity {
 
         CheckBox cb = new CheckBox(this);
         cb.setText(title);
-        cb.setTextColor(Color.WHITE);
-        cb.setTextSize(15);
+        cb.setTextColor(Color.parseColor("#F2F2F7"));
+        cb.setTextSize(14);
         cb.setChecked(checked);
         cb.setOnCheckedChangeListener((btn, isChecked) -> setter.accept(isChecked));
         cb.setPadding(dp(4), dp(2), dp(4), 0);
@@ -368,8 +368,8 @@ public class MainActivity extends AppCompatActivity {
 
         TextView descTv = new TextView(this);
         descTv.setText(desc);
-        descTv.setTextColor(Color.parseColor("#888888"));
-        descTv.setTextSize(12);
+        descTv.setTextColor(Color.parseColor("#8E8E93"));
+        descTv.setTextSize(11);
         descTv.setPadding(dp(36), 0, dp(8), dp(4));
         box.addView(descTv);
 
@@ -389,9 +389,9 @@ public class MainActivity extends AppCompatActivity {
     private void addInfoText(LinearLayout parent, String text) {
         TextView tv = new TextView(this);
         tv.setText(text);
-        tv.setTextColor(Color.parseColor("#888888"));
-        tv.setTextSize(13);
-        tv.setBackgroundColor(Color.parseColor("#16213E"));
+        tv.setTextColor(Color.parseColor("#8E8E93"));
+        tv.setTextSize(12);
+        tv.setBackgroundColor(Color.parseColor("#2C2C2E"));
         tv.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);

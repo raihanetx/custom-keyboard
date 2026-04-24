@@ -68,6 +68,7 @@ public class CustomKeyboardService extends InputMethodService {
 
     // Colors
     private int bgColor, keyColor, keyTextColor, accentColor, keyBorderColor, toolbarBg, pressedColor;
+    private int specialKeyColor, specialKeyTextColor;
 
     // Key sizing
     private int keyHeightPx;
@@ -400,47 +401,55 @@ public class CustomKeyboardService extends InputMethodService {
 
     private void loadTheme() {
         float scale = prefs.getHeightScale();
-        keyHeightPx = (int)(52 * density * scale);
-        keyMinWidthPx = (int)(30 * density);
-        cornerRadiusPx = (int)(6 * density);
+        keyHeightPx = (int)(48 * density * scale);
+        keyMinWidthPx = (int)(28 * density);
+        cornerRadiusPx = (int)(8 * density);
 
         int themeId = prefs.getTheme();
         switch (themeId) {
             case 1: // Light
-                bgColor = Color.parseColor("#F0F0F0");
+                bgColor = Color.parseColor("#F5F5F5");
                 keyColor = Color.parseColor("#FFFFFF");
-                pressedColor = Color.parseColor("#D0D0D0");
-                keyTextColor = Color.parseColor("#1A1A1A");
-                accentColor = Color.parseColor("#E94560");
-                keyBorderColor = Color.parseColor("#CCCCCC");
-                toolbarBg = Color.parseColor("#E0E0E0");
+                pressedColor = Color.parseColor("#E0E0E0");
+                keyTextColor = Color.parseColor("#212121");
+                accentColor = Color.parseColor("#5B6EF5");
+                keyBorderColor = Color.parseColor("#E8E8E8");
+                toolbarBg = Color.parseColor("#FAFAFA");
+                specialKeyColor = Color.parseColor("#EEEEEE");
+                specialKeyTextColor = Color.parseColor("#616161");
                 break;
             case 2: // AMOLED
                 bgColor = Color.parseColor("#000000");
-                keyColor = Color.parseColor("#111111");
-                pressedColor = Color.parseColor("#333333");
-                keyTextColor = Color.parseColor("#EEEEEE");
-                accentColor = Color.parseColor("#E94560");
-                keyBorderColor = Color.parseColor("#222222");
-                toolbarBg = Color.parseColor("#050505");
+                keyColor = Color.parseColor("#141414");
+                pressedColor = Color.parseColor("#2A2A2A");
+                keyTextColor = Color.parseColor("#F0F0F0");
+                accentColor = Color.parseColor("#7C8AFF");
+                keyBorderColor = Color.parseColor("#1A1A1A");
+                toolbarBg = Color.parseColor("#0A0A0A");
+                specialKeyColor = Color.parseColor("#1A1A1A");
+                specialKeyTextColor = Color.parseColor("#909090");
                 break;
             case 3: // Blue
                 bgColor = Color.parseColor("#0D1B2A");
                 keyColor = Color.parseColor("#1B2838");
                 pressedColor = Color.parseColor("#2A3F55");
-                keyTextColor = Color.parseColor("#E0E0E0");
-                accentColor = Color.parseColor("#4FC3F7");
-                keyBorderColor = Color.parseColor("#2A3F55");
+                keyTextColor = Color.parseColor("#E8EDF2");
+                accentColor = Color.parseColor("#64B5F6");
+                keyBorderColor = Color.parseColor("#1E3045");
                 toolbarBg = Color.parseColor("#0A1520");
+                specialKeyColor = Color.parseColor("#162530");
+                specialKeyTextColor = Color.parseColor("#8EAFC0");
                 break;
-            default: // Dark
-                bgColor = Color.parseColor("#1A1A2E");
-                keyColor = Color.parseColor("#16213E");
-                pressedColor = Color.parseColor("#2A2A4A");
-                keyTextColor = Color.parseColor("#FFFFFF");
-                accentColor = Color.parseColor("#E94560");
-                keyBorderColor = Color.parseColor("#0F3460");
-                toolbarBg = Color.parseColor("#0F3460");
+            default: // Dark (Modern)
+                bgColor = Color.parseColor("#1C1C1E");
+                keyColor = Color.parseColor("#2C2C2E");
+                pressedColor = Color.parseColor("#3A3A3C");
+                keyTextColor = Color.parseColor("#F2F2F7");
+                accentColor = Color.parseColor("#5B6EF5");
+                keyBorderColor = Color.parseColor("#323234");
+                toolbarBg = Color.parseColor("#1C1C1E");
+                specialKeyColor = Color.parseColor("#323234");
+                specialKeyTextColor = Color.parseColor("#A0A0A5");
                 break;
         }
     }
@@ -452,7 +461,7 @@ public class CustomKeyboardService extends InputMethodService {
         toolbarLayout.setOrientation(LinearLayout.HORIZONTAL);
         toolbarLayout.setBackgroundColor(toolbarBg);
         toolbarLayout.setGravity(Gravity.CENTER_VERTICAL);
-        toolbarLayout.setPadding(dp(4), dp(4), dp(4), dp(4));
+        toolbarLayout.setPadding(dp(6), dp(4), dp(6), dp(4));
 
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
@@ -469,7 +478,7 @@ public class CustomKeyboardService extends InputMethodService {
 
         voiceStatusText = new TextView(this);
         voiceStatusText.setTextSize(10);
-        voiceStatusText.setTextColor(Color.parseColor("#AAAAAA"));
+        voiceStatusText.setTextColor(specialKeyTextColor);
         voiceStatusText.setVisibility(View.GONE);
         voiceStatusText.setPadding(dp(4), 0, dp(4), 0);
         inner.addView(voiceStatusText);
@@ -499,12 +508,12 @@ public class CustomKeyboardService extends InputMethodService {
     private TextView toolbarBtn(String text, View.OnClickListener listener) {
         TextView btn = new TextView(this);
         btn.setText(text);
-        btn.setTextSize(13);
-        btn.setTextColor(accentColor);
+        btn.setTextSize(14);
+        btn.setTextColor(specialKeyTextColor);
         btn.setGravity(Gravity.CENTER);
         btn.setPadding(dp(10), dp(6), dp(10), dp(6));
         btn.setOnClickListener(listener);
-        btn.setBackground(roundedBg(keyColor, cornerRadiusPx));
+        btn.setBackground(roundedBg(specialKeyColor, cornerRadiusPx));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.setMargins(dp(2), 0, dp(2), 0);
@@ -532,13 +541,14 @@ public class CustomKeyboardService extends InputMethodService {
 
     private KeyView makeKey(String label, int normalColor, int textColor, boolean isSpecial) {
         KeyView key = new KeyView(this, label, normalColor, pressedColor, textColor, keyBorderColor, cornerRadiusPx);
-        key.setTextSize(isSpecial ? 15 : 20);
+        key.setTextSize(isSpecial ? 14 : 18);
+        key.setTypeface(isSpecial ? Typeface.DEFAULT : Typeface.DEFAULT_BOLD);
         key.setMinimumHeight(keyHeightPx);
         key.setMinimumWidth(keyMinWidthPx);
         key.setVibrateEnabled(prefs.isVibrateEnabled());
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
-        lp.setMargins(dp(2), 0, dp(2), 0);
+        lp.setMargins(dp(1), dp(1), dp(1), dp(1));
         key.setLayoutParams(lp);
 
         return key;
@@ -603,9 +613,9 @@ public class CustomKeyboardService extends InputMethodService {
             for (String k : rowKeys) {
                 switch (k) {
                     case "⇧": {
-                        KeyView key = makeKey("⇧", Color.parseColor("#2A2A4A"), Color.WHITE, true);
-                        key.updateColors(isCaps ? accentColor : Color.parseColor("#2A2A4A"),
-                                        pressedColor, isCaps ? Color.WHITE : Color.WHITE);
+                        KeyView key = makeKey("⇧", specialKeyColor, specialKeyTextColor, true);
+                        key.updateColors(isCaps ? accentColor : specialKeyColor,
+                                        pressedColor, isCaps ? Color.WHITE : specialKeyTextColor);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 if (isCaps && !isShiftLocked) isShiftLocked = true;
@@ -621,20 +631,18 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "⌫": {
-                        KeyView key = makeKey("⌫", accentColor, Color.WHITE, true);
+                        KeyView key = makeKey("⌫", specialKeyColor, accentColor, true);
                         key.setRepeatable(true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
                                 if (ic != null) ic.deleteSurroundingText(1, 0);
-                                // Update current word tracking
                                 if (currentWord.length() > 0) {
                                     currentWord.setLength(currentWord.length() - 1);
                                     if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
                                         suggestionsBar.updateSuggestions(currentWord.toString());
                                     }
                                 }
-                                // Update translation buffer
                                 if (translationBuffer.length() > 0) {
                                     translationBuffer.setLength(translationBuffer.length() - 1);
                                 }
@@ -650,7 +658,6 @@ public class CustomKeyboardService extends InputMethodService {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
                                 if (ic == null) return;
-                                // Flush translation buffer before enter
                                 if (translationBuffer.length() > 0) {
                                     flushEntireBuffer(ic);
                                 }
@@ -678,8 +685,9 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "space": {
-                        KeyView key = makeKey("Space", keyColor, Color.parseColor("#AAAAAA"), false);
-                        key.setTextSize(12);
+                        KeyView key = makeKey("Space", keyColor, specialKeyTextColor, false);
+                        key.setTextSize(11);
+                        key.setTypeface(Typeface.DEFAULT);
                         key.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3));
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
@@ -691,8 +699,8 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "123": {
-                        KeyView key = makeKey("123", Color.parseColor("#2A2A4A"), accentColor, true);
-                        key.setTextSize(13);
+                        KeyView key = makeKey("123", specialKeyColor, specialKeyTextColor, true);
+                        key.setTextSize(12);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) { showKeyboard(MODE_NUMBERS); }
                             @Override public void onKeyLongPressed(String label) {}
@@ -701,7 +709,7 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "🌐": {
-                        KeyView key = makeKey("🌐", Color.parseColor("#2A2A4A"), accentColor, true);
+                        KeyView key = makeKey("🌐", specialKeyColor, specialKeyTextColor, true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) { cycleTranslationMode(); }
                             @Override public void onKeyLongPressed(String label) {}
@@ -744,14 +752,12 @@ public class CustomKeyboardService extends InputMethodService {
             for (String k : rowKeys) {
                 switch (k) {
                     case "⌫": {
-                        KeyView key = makeKey("⌫", accentColor, Color.WHITE, true);
+                        KeyView key = makeKey("⌫", specialKeyColor, accentColor, true);
                         key.setRepeatable(true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
                                 if (ic != null) ic.deleteSurroundingText(1, 0);
-                                // BUG FIX: Also update translationBuffer and currentWord
-                                // when backspacing in non-QWERTY modes
                                 if (currentWord.length() > 0) {
                                     currentWord.setLength(currentWord.length() - 1);
                                 }
@@ -780,8 +786,9 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "space": {
-                        KeyView key = makeKey("Space", keyColor, Color.parseColor("#AAAAAA"), false);
-                        key.setTextSize(12);
+                        KeyView key = makeKey("Space", keyColor, specialKeyTextColor, false);
+                        key.setTextSize(11);
+                        key.setTypeface(Typeface.DEFAULT);
                         key.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3));
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) { commitText(" "); }
@@ -791,8 +798,8 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "ABC": {
-                        KeyView key = makeKey("ABC", Color.parseColor("#2A2A4A"), accentColor, true);
-                        key.setTextSize(13);
+                        KeyView key = makeKey("ABC", specialKeyColor, specialKeyTextColor, true);
+                        key.setTextSize(12);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) { showKeyboard(MODE_QWERTY); }
                             @Override public void onKeyLongPressed(String label) {}
@@ -801,7 +808,7 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "◂": {
-                        KeyView key = makeKey("◂", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        KeyView key = makeKey("◂", specialKeyColor, specialKeyTextColor, true);
                         key.setRepeatable(true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
@@ -817,7 +824,7 @@ public class CustomKeyboardService extends InputMethodService {
                         break;
                     }
                     case "▸": {
-                        KeyView key = makeKey("▸", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        KeyView key = makeKey("▸", specialKeyColor, specialKeyTextColor, true);
                         key.setRepeatable(true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {

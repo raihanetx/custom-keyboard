@@ -8,15 +8,13 @@ import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
-import android.view.View;
+import android.view.ViewConfiguration;
 import android.widget.TextView;
 
 /**
- * Custom key view with proper press feedback, accessibility, and touch handling.
- * Supports pressed state animation, long-press repeat, and haptic feedback.
+ * Clean, minimal key view with subtle press feedback.
  */
 public class KeyView extends TextView {
 
@@ -33,15 +31,14 @@ public class KeyView extends TextView {
     private int cornerRadius;
     private boolean isRepeatable = false;
     private boolean isPressed = false;
+    private boolean hasRepeated = false;
     private OnKeyActionListener listener;
     private Vibrator vibrator;
     private boolean vibrateEnabled = true;
 
-    // Long-press repeat
     private Runnable repeatRunnable;
     private Runnable longPressRunnable;
     private android.os.Handler repeatHandler;
-    private boolean hasRepeated = false;
     private static final int REPEAT_DELAY = 400;
     private static final int REPEAT_INTERVAL = 70;
 
@@ -62,11 +59,8 @@ public class KeyView extends TextView {
         setGravity(Gravity.CENTER);
         setClickable(true);
         setFocusable(true);
-
-        // Accessibility
+        setTypeface(Typeface.DEFAULT);
         setContentDescription(getContentDescriptionForLabel(label));
-
-        // Background with pressed state
         setBackground(createStateBackground());
     }
 
@@ -115,13 +109,12 @@ public class KeyView extends TextView {
                     };
                     repeatHandler.postDelayed(repeatRunnable, REPEAT_DELAY);
                 }
-                // Post a delayed long-press check since we consume touch events
                 longPressRunnable = () -> {
                     if (isPressed && listener != null) {
                         listener.onKeyLongPressed(keyLabel);
                     }
                 };
-                repeatHandler.postDelayed(longPressRunnable, android.view.ViewConfiguration.getLongPressTimeout());
+                repeatHandler.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout());
                 return true;
 
             case MotionEvent.ACTION_UP:
@@ -129,8 +122,6 @@ public class KeyView extends TextView {
                     setPressed(false);
                     isPressed = false;
                     repeatHandler.removeCallbacksAndMessages(null);
-                    // BUG FIX: Don't fire onKeyPressed if repeat already handled it
-                    // (prevents double keypress on release for repeatable keys)
                     if (!hasRepeated && listener != null) {
                         listener.onKeyPressed(keyLabel);
                     }
@@ -148,11 +139,8 @@ public class KeyView extends TextView {
 
     @Override
     public boolean performLongClick() {
-        // Always call super for proper accessibility/event chain handling
         super.performLongClick();
-        if (listener != null) {
-            listener.onKeyLongPressed(keyLabel);
-        }
+        if (listener != null) listener.onKeyLongPressed(keyLabel);
         return true;
     }
 
@@ -160,9 +148,9 @@ public class KeyView extends TextView {
         if (vibrateEnabled && vibrator != null) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE));
+                    vibrator.vibrate(VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE));
                 } else {
-                    vibrator.vibrate(12);
+                    vibrator.vibrate(10);
                 }
             } catch (Exception ignored) {}
         }
@@ -171,18 +159,17 @@ public class KeyView extends TextView {
     private StateListDrawable createStateBackground() {
         StateListDrawable states = new StateListDrawable();
 
-        // Pressed state
         GradientDrawable pressed = new GradientDrawable();
         pressed.setColor(pressedColor);
         pressed.setCornerRadius(cornerRadius);
-        pressed.setStroke(1, borderColor);
         states.addState(new int[]{android.R.attr.state_pressed}, pressed);
 
-        // Normal state
         GradientDrawable normal = new GradientDrawable();
         normal.setColor(normalColor);
         normal.setCornerRadius(cornerRadius);
-        normal.setStroke(1, borderColor);
+        if (borderColor != Color.TRANSPARENT) {
+            normal.setStroke(1, borderColor);
+        }
         states.addState(new int[]{}, normal);
 
         return states;
@@ -201,14 +188,7 @@ public class KeyView extends TextView {
             case "ABC": return "Back to letters";
             case "◂": return "Move cursor left";
             case "▸": return "Move cursor right";
-            default: return label.length() == 1 ? label : label;
+            default: return label;
         }
-    }
-
-    public static int darkenColor(int color, float factor) {
-        int r = (int)(Color.red(color) * factor);
-        int g = (int)(Color.green(color) * factor);
-        int b = (int)(Color.blue(color) * factor);
-        return Color.rgb(Math.min(r, 255), Math.min(g, 255), Math.min(b, 255));
     }
 }

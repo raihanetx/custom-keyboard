@@ -13,8 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Simple word suggestions bar that appears above the keyboard.
- * Shows word completions based on current typed prefix.
+ * Minimal word suggestions bar with clean styling.
  */
 public class SuggestionsBar extends LinearLayout {
 
@@ -27,9 +26,9 @@ public class SuggestionsBar extends LinearLayout {
     private int accentColor;
     private int bgColor;
     private int textColor;
+    private int chipBgColor;
     private float density;
 
-    // Basic English word frequency list (top common words)
     private static final String[] COMMON_WORDS = {
         "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
         "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
@@ -43,7 +42,7 @@ public class SuggestionsBar extends LinearLayout {
         "first", "well", "way", "even", "new", "want", "because", "any", "these",
         "give", "day", "most", "us", "is", "am", "are", "was", "were", "been",
         "has", "had", "did", "does", "doing", "done", "should", "may", "might",
-        "must", "shall", "can", "could", "would", "need", "dare", "ought",
+        "must", "shall", "could", "would", "need", "dare", "ought",
         "used", "hello", "thanks", "please", "sorry", "yes", "no", "ok",
         "what", "where", "when", "why", "how", "who", "which",
         "good", "bad", "big", "small", "hot", "cold", "old", "new",
@@ -62,6 +61,12 @@ public class SuggestionsBar extends LinearLayout {
         this.bgColor = bgColor;
         this.textColor = textColor;
         this.density = context.getResources().getDisplayMetrics().density;
+
+        // Chip background: slightly lighter than keyboard bg
+        int r = Math.min(Color.red(bgColor) + 20, 255);
+        int g = Math.min(Color.green(bgColor) + 20, 255);
+        int b = Math.min(Color.blue(bgColor) + 20, 255);
+        this.chipBgColor = Color.rgb(r, g, b);
 
         setOrientation(HORIZONTAL);
         setBackgroundColor(bgColor);
@@ -99,8 +104,6 @@ public class SuggestionsBar extends LinearLayout {
         }
 
         setVisibility(View.VISIBLE);
-
-        // Add the typed word first (so user can select exactly what they typed)
         addSuggestionChip(currentWord, false);
 
         for (String word : suggestions) {
@@ -123,16 +126,20 @@ public class SuggestionsBar extends LinearLayout {
 
         if (isSuggestion) {
             chip.setTextColor(textColor);
-            chip.setTypeface(null, Typeface.NORMAL);
+            chip.setTypeface(Typeface.DEFAULT);
         } else {
             chip.setTextColor(accentColor);
-            chip.setTypeface(null, Typeface.BOLD);
+            chip.setTypeface(Typeface.DEFAULT_BOLD);
         }
 
+        // Subtle rounded background for chips
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(chipBgColor);
+        bg.setCornerRadius(dp(6));
+        chip.setBackground(bg);
+
         chip.setOnClickListener(v -> {
-            if (listener != null) {
-                listener.onSuggestionSelected(word);
-            }
+            if (listener != null) listener.onSuggestionSelected(word);
         });
 
         LayoutParams lp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
