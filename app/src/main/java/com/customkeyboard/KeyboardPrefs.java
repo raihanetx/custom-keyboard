@@ -49,6 +49,8 @@ public class KeyboardPrefs {
     public boolean isAutoCapitalize() { return prefs.getBoolean(KEY_AUTO_CAP, true); }
     public void setAutoCapitalize(boolean v) { prefs.edit().putBoolean(KEY_AUTO_CAP, v).apply(); }
 
+    public boolean isSuggestionsEnabled() { return true; }
+
     public float getHeightScale() { return prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f); }
     public void setHeightScale(float scale) { prefs.edit().putFloat(KEY_HEIGHT_SCALE, scale).apply(); }
 }

@@ -901,7 +901,7 @@ public class CustomKeyboardService extends InputMethodService {
                         case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: msg = "Timeout"; break;
                         case SpeechRecognizer.ERROR_AUDIO: msg = "Audio error"; break;
                         case SpeechRecognizer.ERROR_NETWORK: msg = "Network error"; break;
-                        case SpeechRecognizer.ERROR_PERMISSION: msg = "Mic permission denied"; break;
+                        default: msg = "Error " + error;
                         default: msg = "Error " + error;
                     }
                     if (voiceStatusText != null) voiceStatusText.setText(msg);
