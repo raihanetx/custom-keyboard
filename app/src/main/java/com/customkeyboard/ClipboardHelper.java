@@ -31,7 +31,7 @@ public class ClipboardHelper {
         loadHistory();
     }
 
-    public void startListening(Object callback) {
+    public void startListening() {
         stopListening();
         clipListener = () -> {
             ClipData clip = clipboardManager.getPrimaryClip();

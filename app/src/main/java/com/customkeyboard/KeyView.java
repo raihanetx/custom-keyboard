@@ -39,7 +39,9 @@ public class KeyView extends TextView {
 
     // Long-press repeat
     private Runnable repeatRunnable;
+    private Runnable longPressRunnable;
     private android.os.Handler repeatHandler;
+    private boolean hasRepeated = false;
     private static final int REPEAT_DELAY = 400;
     private static final int REPEAT_INTERVAL = 70;
 
@@ -100,17 +102,26 @@ public class KeyView extends TextView {
             case MotionEvent.ACTION_DOWN:
                 setPressed(true);
                 isPressed = true;
+                hasRepeated = false;
                 performHaptic();
 
                 if (isRepeatable) {
                     repeatRunnable = () -> {
                         if (isPressed && listener != null) {
+                            hasRepeated = true;
                             listener.onKeyPressed(keyLabel);
                             repeatHandler.postDelayed(repeatRunnable, REPEAT_INTERVAL);
                         }
                     };
                     repeatHandler.postDelayed(repeatRunnable, REPEAT_DELAY);
                 }
+                // Post a delayed long-press check since we consume touch events
+                longPressRunnable = () -> {
+                    if (isPressed && listener != null) {
+                        listener.onKeyLongPressed(keyLabel);
+                    }
+                };
+                repeatHandler.postDelayed(longPressRunnable, android.view.ViewConfiguration.getLongPressTimeout());
                 return true;
 
             case MotionEvent.ACTION_UP:
@@ -118,7 +129,9 @@ public class KeyView extends TextView {
                     setPressed(false);
                     isPressed = false;
                     repeatHandler.removeCallbacksAndMessages(null);
-                    if (listener != null) {
+                    // BUG FIX: Don't fire onKeyPressed if repeat already handled it
+                    // (prevents double keypress on release for repeatable keys)
+                    if (!hasRepeated && listener != null) {
                         listener.onKeyPressed(keyLabel);
                     }
                 }
@@ -135,9 +148,8 @@ public class KeyView extends TextView {
 
     @Override
     public boolean performLongClick() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            super.performLongClick();
-        }
+        // Always call super for proper accessibility/event chain handling
+        super.performLongClick();
         if (listener != null) {
             listener.onKeyLongPressed(keyLabel);
         }

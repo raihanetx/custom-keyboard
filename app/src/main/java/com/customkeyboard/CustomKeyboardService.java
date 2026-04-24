@@ -72,6 +72,7 @@ public class CustomKeyboardService extends InputMethodService {
     private InputConnection cachedIC;
     private EditorInfo cachedEditorInfo;
     private StringBuilder currentWord = new StringBuilder();
+    private int committedLength = 0; // tracks actual chars committed to editor (differs from currentWord in EN→BN mode)
 
     // EN→BN translation buffer (accumulates original English chars for word-level matching)
     private StringBuilder translationBuffer = new StringBuilder();
@@ -142,12 +143,15 @@ public class CustomKeyboardService extends InputMethodService {
         suggestionsBar.setOnSuggestionSelectedListener(word -> {
             InputConnection ic = getIC();
             if (ic != null) {
-                // Delete current word, commit suggestion (skip translation for suggestion)
-                ic.deleteSurroundingText(currentWord.length(), 0);
+                // BUG FIX: Use committedLength to delete the correct number of chars
+                // (in EN→BN mode, committedLength differs from currentWord.length())
+                int toDelete = committedLength > 0 ? committedLength : currentWord.length();
+                ic.deleteSurroundingText(toDelete, 0);
                 skipTranslation = true;
                 ic.commitText(word + " ", 1);
                 skipTranslation = false;
                 currentWord.setLength(0);
+                committedLength = 0;
                 translationBuffer.setLength(0);
                 suggestionsBar.hide();
             }
@@ -174,7 +178,7 @@ public class CustomKeyboardService extends InputMethodService {
         super.onStartInput(attribute, restarting);
         cachedEditorInfo = attribute;
         cachedIC = getCurrentInputConnection();
-        if (clipboardHelper != null) clipboardHelper.startListening(null);
+        if (clipboardHelper != null) clipboardHelper.startListening();
     }
 
     @Override
@@ -188,6 +192,7 @@ public class CustomKeyboardService extends InputMethodService {
     public void onFinishInput() {
         super.onFinishInput();
         currentWord.setLength(0);
+        committedLength = 0;
         translationBuffer.setLength(0);
     }
 
@@ -204,6 +209,11 @@ public class CustomKeyboardService extends InputMethodService {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        // BUG FIX: Flush any pending translation buffer before rebuilding
+        InputConnection ic = getIC();
+        if (ic != null && translationBuffer.length() > 0) {
+            flushEntireBuffer(ic);
+        }
         // Rebuild keyboard on orientation change
         if (keyboardContainer != null) {
             onCreateInputView();
@@ -238,8 +248,9 @@ public class CustomKeyboardService extends InputMethodService {
                     // Try to flush matched parts of the buffer
                     String translated = flushTranslationBuffer(ic);
                     if (haptic) performHaptic();
-                    // Track for suggestions using translated text
-                    currentWord.append(translated);
+                    // BUG FIX: Track English input for suggestions, not Bangla translation
+                    currentWord.append(text.toLowerCase(Locale.getDefault()));
+                    committedLength += translated.length();
                     if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
                         suggestionsBar.updateSuggestions(currentWord.toString());
                     }
@@ -253,6 +264,7 @@ public class CustomKeyboardService extends InputMethodService {
                     if (haptic) performHaptic();
                     if (text.equals(" ") || text.equals("\n")) {
                         currentWord.setLength(0);
+                        committedLength = 0;
                         if (suggestionsBar != null) suggestionsBar.hide();
                     }
                     return;
@@ -277,6 +289,7 @@ public class CustomKeyboardService extends InputMethodService {
                 }
             } else if (text.equals(" ") || text.equals("\n")) {
                 currentWord.setLength(0);
+                committedLength = 0;
                 if (suggestionsBar != null) suggestionsBar.hide();
             }
         }
@@ -362,10 +375,13 @@ public class CustomKeyboardService extends InputMethodService {
             char c = before.charAt(0);
             return c == '\n'; // start of line
         }
-        // Check for ". " pattern (period + space = sentence end)
+        // Check for sentence-ending patterns: ". ", "? ", "! ", or newline
         char last = before.charAt(before.length() - 1);
         char prev = before.charAt(before.length() - 2);
-        return (prev == '.' && last == ' ') || last == '\n';
+        return (prev == '.' && last == ' ') ||
+               (prev == '?' && last == ' ') ||
+               (prev == '!' && last == ' ') ||
+               last == '\n';
     }
 
     // ==================== THEME ====================
@@ -722,6 +738,14 @@ public class CustomKeyboardService extends InputMethodService {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
                                 if (ic != null) ic.deleteSurroundingText(1, 0);
+                                // BUG FIX: Also update translationBuffer and currentWord
+                                // when backspacing in non-QWERTY modes
+                                if (currentWord.length() > 0) {
+                                    currentWord.setLength(currentWord.length() - 1);
+                                }
+                                if (translationBuffer.length() > 0) {
+                                    translationBuffer.setLength(translationBuffer.length() - 1);
+                                }
                             }
                             @Override public void onKeyLongPressed(String label) {}
                         });
@@ -766,6 +790,7 @@ public class CustomKeyboardService extends InputMethodService {
                     }
                     case "◂": {
                         KeyView key = makeKey("◂", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        key.setRepeatable(true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
@@ -781,6 +806,7 @@ public class CustomKeyboardService extends InputMethodService {
                     }
                     case "▸": {
                         KeyView key = makeKey("▸", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        key.setRepeatable(true);
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
