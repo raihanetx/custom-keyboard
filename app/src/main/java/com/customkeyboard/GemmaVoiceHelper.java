@@ -263,8 +263,6 @@ public class GemmaVoiceHelper {
 
                 notifyError("No transcription returned");
 
-            } catch (InterruptedException e) {
-                // API call was cancelled — silent exit
             } catch (Exception e) {
                 if (!Thread.interrupted()) {
                     Log.e(TAG, "API call failed", e);
