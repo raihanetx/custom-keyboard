@@ -1,8 +1,9 @@
-name: Build APK
+name: Build & Release APK
 
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 jobs:
@@ -27,23 +28,61 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    - name: Extract version info
+      id: version
+      run: |
+        VERSION_NAME=$(grep 'versionName' app/build.gradle | sed 's/.*"\(.*\)".*/\1/')
+        VERSION_CODE=$(grep 'versionCode' app/build.gradle | sed 's/.*\s\([0-9]*\).*/\1/')
+        echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+        echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
-    - name: Upload APK
+    - name: Upload Release APK
       uses: actions/upload-artifact@v4
       if: success()
       continue-on-error: true
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: custom-keyboard-v${{ steps.version.outputs.version_name }}
+        path: |
+          app/build/outputs/apk/release/app-release.apk
+          app/build/outputs/apk/debug/app-debug.apk
 
-    - name: Create Release and Upload APK
+    - name: Create GitHub Release
       if: success()
       uses: softprops/action-gh-release@v2
       with:
-        files: app/build/outputs/apk/debug/app-debug.apk
-        tag_name: v${{ github.run_number }}
-        name: Build ${{ github.run_number }}
+        tag_name: v${{ steps.version.outputs.version_name }}
+        name: "Custom Keyboard v${{ steps.version.outputs.version_name }}"
+        body: |
+          ## Custom Keyboard v${{ steps.version.outputs.version_name }}
+
+          ### Features
+          - ⌨️ QWERTY keyboard with long-press for numbers & symbols
+          - 🔤 Symbols, Numbers, Emoji keyboards (with recent tracking)
+          - 🎤 Voice typing (speech-to-text)
+          - 🇧🇩 Bangla ↔ English phonetic translation (200+ words)
+          - 📋 Clipboard history (persistent, survives restarts)
+          - 🎨 4 themes: Dark, Light, AMOLED Black, Blue
+          - 📏 Adjustable keyboard height
+          - 💡 Word suggestions while typing
+          - ✨ Key press visual feedback with haptic response
+          - ♿ Accessibility support (content descriptions)
+          - 🔄 Landscape orientation support
+          - 🔧 Smart shift (single tap = cap, double = lock, long = caps lock)
+          - ⬅️➡️ Cursor movement arrows
+          - ⌫ Long-press delete for fast erase
+
+          ### Install
+          Download `app-release.apk` below, open it, and enable the keyboard in Settings.
+        files: |
+          app/build/outputs/apk/release/app-release.apk
+          app/build/outputs/apk/debug/app-debug.apk
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
