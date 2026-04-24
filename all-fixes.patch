@@ -1,0 +1,522 @@
+From 0c8f44407bece3a53d669c54ff94d03bfb32a919 Mon Sep 17 00:00:00 2001
+From: Bug Fix <fix@customkeyboard.local>
+Date: Fri, 24 Apr 2026 12:30:25 +0800
+Subject: [PATCH 1/3] fix: resolve all bugs in custom keyboard
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+1. Fix EN→BN translation (word-level buffering instead of per-char)
+   - Multi-char phonetic sequences like 'kh'→খ, 'sh'→শ, 'ami'→আমি now work
+   - Greedy prefix matching with isPrefixOfLongerKey() to avoid premature flush
+   - Whole-word match on space/punctuation (e.g. 'ami ' → আমি)
+   - Falls back to char-by-char for unknown sequences
+
+2. Implement auto-capitalize
+   - Checks isAtSentenceStart() before committing letters
+   - Triggers at field start, after '. ' (period+space), or after newline
+
+3. Fix isSuggestionsEnabled() - was hardcoded to true
+   - Added KEY_SUGGESTIONS preference
+   - Added 'Word Suggestions' checkbox in settings UI
+
+4. Fix BanglaTranslator API encapsulation
+   - Added public containsKey(), getTranslation(), isPrefixOfLongerKey()
+   - Removed direct private map access from CustomKeyboardService
+
+5. Clean up translation flow
+   - Removed redundant per-char translation in makeLetterKey()
+   - Translation now handled centrally in commitText()
+   - Translation buffer cleared on mode change, input finish, enter, backspace
+---
+ .../com/customkeyboard/BanglaTranslator.java  |  27 ++++
+ .../customkeyboard/CustomKeyboardService.java | 150 +++++++++++++++++-
+ .../com/customkeyboard/KeyboardPrefs.java     |   4 +-
+ .../java/com/customkeyboard/MainActivity.java |   3 +
+ 4 files changed, 177 insertions(+), 7 deletions(-)
+
+diff --git a/app/src/main/java/com/customkeyboard/BanglaTranslator.java b/app/src/main/java/com/customkeyboard/BanglaTranslator.java
+index e9cf2e9..d7680ba 100644
+--- a/app/src/main/java/com/customkeyboard/BanglaTranslator.java
++++ b/app/src/main/java/com/customkeyboard/BanglaTranslator.java
+@@ -390,6 +390,33 @@ public class BanglaTranslator {
+         return result.toString();
+     }
+ 
++    /**
++     * Check if the given string is a prefix of any longer key in englishToBangla map.
++     * Used by the translation buffer to decide whether to keep buffering.
++     */
++    public static boolean isPrefixOfLongerKey(String prefix) {
++        for (String key : englishToBangla.keySet()) {
++            if (key.length() > prefix.length() && key.startsWith(prefix)) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    /**
++     * Check if the englishToBangla map contains the given key.
++     */
++    public static boolean containsKey(String key) {
++        return englishToBangla.containsKey(key);
++    }
++
++    /**
++     * Get the Bangla translation for an English key.
++     */
++    public static String getTranslation(String key) {
++        return englishToBangla.get(key);
++    }
++
+     public static String englishToBangla(String englishText) {
+         String lower = englishText.toLowerCase().trim();
+         if (englishToBangla.containsKey(lower)) {
+diff --git a/app/src/main/java/com/customkeyboard/CustomKeyboardService.java b/app/src/main/java/com/customkeyboard/CustomKeyboardService.java
+index a3917de..46bb9fc 100644
+--- a/app/src/main/java/com/customkeyboard/CustomKeyboardService.java
++++ b/app/src/main/java/com/customkeyboard/CustomKeyboardService.java
+@@ -73,6 +73,9 @@ public class CustomKeyboardService extends InputMethodService {
+     private EditorInfo cachedEditorInfo;
+     private StringBuilder currentWord = new StringBuilder();
+ 
++    // EN→BN translation buffer (accumulates original English chars for word-level matching)
++    private StringBuilder translationBuffer = new StringBuilder();
++
+     // Key tracking for shift
+     private final List<KeyView> letterKeys = new ArrayList<>();
+ 
+@@ -125,6 +128,7 @@ public class CustomKeyboardService extends InputMethodService {
+         loadTheme();
+         letterKeys.clear();
+         currentWord.setLength(0);
++        translationBuffer.setLength(0);
+ 
+         keyboardContainer = new LinearLayout(this);
+         keyboardContainer.setOrientation(LinearLayout.VERTICAL);
+@@ -178,6 +182,7 @@ public class CustomKeyboardService extends InputMethodService {
+     public void onFinishInput() {
+         super.onFinishInput();
+         currentWord.setLength(0);
++        translationBuffer.setLength(0);
+     }
+ 
+     @Override
+@@ -213,12 +218,54 @@ public class CustomKeyboardService extends InputMethodService {
+     private void commitText(String text, boolean haptic) {
+         InputConnection ic = getIC();
+         if (ic != null) {
+-            ic.commitText(text, 1);
++            // Apply translation
++            int transMode = prefs.getTranslationMode();
++            String toCommit = text;
++
++            if (transMode == 1) {
++                // BN→EN: character-by-character transliteration (works for single chars)
++                toCommit = BanglaTranslator.translateWord(text, transMode);
++            } else if (transMode == 2) {
++                // EN→BN: word-level buffering for multi-character phonetic matching
++                if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
++                    translationBuffer.append(text.toLowerCase(Locale.getDefault()));
++                    // Try to flush matched parts of the buffer
++                    String translated = flushTranslationBuffer(ic);
++                    if (haptic) performHaptic();
++                    // Track for suggestions using translated text
++                    currentWord.append(translated);
++                    if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
++                        suggestionsBar.updateSuggestions(currentWord.toString());
++                    }
++                    return;
++                } else {
++                    // Non-letter (space, punctuation, etc.) — flush entire buffer first
++                    flushEntireBuffer(ic);
++                    translationBuffer.setLength(0);
++                    // Then commit the non-letter character as-is
++                    ic.commitText(text, 1);
++                    if (haptic) performHaptic();
++                    if (text.equals(" ") || text.equals("\n")) {
++                        currentWord.setLength(0);
++                        if (suggestionsBar != null) suggestionsBar.hide();
++                    }
++                    return;
++                }
++            }
++
++            // Auto-capitalize: if at start of sentence, force uppercase on first letter
++            if (toCommit.length() == 1 && Character.isLetter(toCommit.charAt(0)) && prefs.isAutoCapitalize()) {
++                if (isAtSentenceStart(ic)) {
++                    toCommit = toCommit.toUpperCase(Locale.getDefault());
++                }
++            }
++
++            ic.commitText(toCommit, 1);
+             if (haptic) performHaptic();
+ 
+             // Track current word for suggestions
+             if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
+-                currentWord.append(text);
++                currentWord.append(toCommit);
+                 if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
+                     suggestionsBar.updateSuggestions(currentWord.toString());
+                 }
+@@ -229,6 +276,92 @@ public class CustomKeyboardService extends InputMethodService {
+         }
+     }
+ 
++    /**
++     * Flush translation buffer by greedily matching the longest prefix.
++     * Returns the flushed (translated) text.
++     */
++    private String flushTranslationBuffer(InputConnection ic) {
++        StringBuilder output = new StringBuilder();
++        while (translationBuffer.length() > 0) {
++            // Check if entire remaining buffer matches
++            String full = translationBuffer.toString();
++            if (BanglaTranslator.containsKey(full)) {
++                // Check if it's a prefix of a longer key — if so, keep buffering
++                if (BanglaTranslator.isPrefixOfLongerKey(full)) {
++                    break; // wait for more input
++                }
++                output.append(BanglaTranslator.getTranslation(full));
++                translationBuffer.setLength(0);
++                break;
++            }
++
++            // Try to find the longest matching prefix (3, 2, 1 chars)
++            boolean matched = false;
++            for (int len = Math.min(3, translationBuffer.length()); len >= 1; len--) {
++                String sub = translationBuffer.substring(0, len);
++                if (BanglaTranslator.containsKey(sub)) {
++                    // Check if this is a prefix of a longer key — keep buffering if so
++                    if (len < translationBuffer.length() || BanglaTranslator.isPrefixOfLongerKey(sub)) {
++                        // Don't flush yet, might form a longer match with upcoming chars
++                        // But only if the remaining buffer (after this sub) hasn't diverged
++                        if (len == translationBuffer.length() && BanglaTranslator.isPrefixOfLongerKey(sub)) {
++                            break; // wait for more input
++                        }
++                    }
++                    output.append(BanglaTranslator.getTranslation(sub));
++                    translationBuffer.delete(0, len);
++                    matched = true;
++                    break;
++                }
++            }
++
++            if (!matched) {
++                // No match for first char, output as-is
++                output.append(translationBuffer.charAt(0));
++                translationBuffer.deleteCharAt(0);
++            }
++        }
++
++        if (output.length() > 0) {
++            ic.commitText(output.toString(), 1);
++        }
++        return output.toString();
++    }
++
++    /**
++     * Flush entire translation buffer as a word-level translation.
++     * Used when space/punctuation is pressed.
++     */
++    private void flushEntireBuffer(InputConnection ic) {
++        if (translationBuffer.length() == 0) return;
++
++        String word = translationBuffer.toString();
++        // Try whole-word match first
++        if (BanglaTranslator.containsKey(word)) {
++            ic.commitText(BanglaTranslator.getTranslation(word), 1);
++        } else {
++            // Fall back to character-by-character
++            ic.commitText(BanglaTranslator.englishToBangla(word), 1);
++        }
++        translationBuffer.setLength(0);
++    }
++
++    /**
++     * Check if the cursor is at the start of a sentence.
++     */
++    private boolean isAtSentenceStart(InputConnection ic) {
++        CharSequence before = ic.getTextBeforeCursor(2, 0);
++        if (before == null || before.length() == 0) return true; // start of field
++        if (before.length() == 1) {
++            char c = before.charAt(0);
++            return c == '\n'; // start of line
++        }
++        // Check for ". " pattern (period + space = sentence end)
++        char last = before.charAt(before.length() - 1);
++        char prev = before.charAt(before.length() - 2);
++        return (prev == '.' && last == ' ') || last == '\n';
++    }
++
+     // ==================== THEME ====================
+ 
+     private void loadTheme() {
+@@ -386,10 +519,6 @@ public class CustomKeyboardService extends InputMethodService {
+             @Override
+             public void onKeyPressed(String label) {
+                 String toCommit = isCaps ? letter.toUpperCase(Locale.getDefault()) : letter;
+-                int transMode = prefs.getTranslationMode();
+-                if (transMode != 0) {
+-                    toCommit = BanglaTranslator.translateWord(toCommit, transMode);
+-                }
+                 commitText(toCommit);
+                 if (isCaps && !isShiftLocked) {
+                     isCaps = false;
+@@ -471,6 +600,10 @@ public class CustomKeyboardService extends InputMethodService {
+                                         suggestionsBar.updateSuggestions(currentWord.toString());
+                                     }
+                                 }
++                                // Update translation buffer
++                                if (translationBuffer.length() > 0) {
++                                    translationBuffer.setLength(translationBuffer.length() - 1);
++                                }
+                             }
+                             @Override public void onKeyLongPressed(String label) {}
+                         });
+@@ -483,6 +616,10 @@ public class CustomKeyboardService extends InputMethodService {
+                             @Override public void onKeyPressed(String label) {
+                                 InputConnection ic = getIC();
+                                 if (ic == null) return;
++                                // Flush translation buffer before enter
++                                if (translationBuffer.length() > 0) {
++                                    flushEntireBuffer(ic);
++                                }
+                                 EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
+                                 if (ei != null) {
+                                     int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
+@@ -956,6 +1093,7 @@ public class CustomKeyboardService extends InputMethodService {
+         int current = prefs.getTranslationMode();
+         int next = (current + 1) % 3;
+         prefs.setTranslationMode(next);
++        translationBuffer.setLength(0); // Clear buffer on mode change
+         String[] labels = {"Translation OFF", "Bangla → English", "English → Bangla"};
+         showToast(labels[next]);
+         rebuildToolbar();
+diff --git a/app/src/main/java/com/customkeyboard/KeyboardPrefs.java b/app/src/main/java/com/customkeyboard/KeyboardPrefs.java
+index 9ba34d3..d5b9916 100644
+--- a/app/src/main/java/com/customkeyboard/KeyboardPrefs.java
++++ b/app/src/main/java/com/customkeyboard/KeyboardPrefs.java
+@@ -15,6 +15,7 @@ public class KeyboardPrefs {
+     private static final String KEY_THEME = "theme"; // 0=dark, 1=light, 2=amoled, 3=blue
+     private static final String KEY_AUTO_CAP = "auto_capitalize";
+     private static final String KEY_HEIGHT_SCALE = "height_scale";
++    private static final String KEY_SUGGESTIONS = "suggestions_enabled";
+ 
+     private final SharedPreferences prefs;
+ 
+@@ -49,7 +50,8 @@ public class KeyboardPrefs {
+     public boolean isAutoCapitalize() { return prefs.getBoolean(KEY_AUTO_CAP, true); }
+     public void setAutoCapitalize(boolean v) { prefs.edit().putBoolean(KEY_AUTO_CAP, v).apply(); }
+ 
+-    public boolean isSuggestionsEnabled() { return true; }
++    public boolean isSuggestionsEnabled() { return prefs.getBoolean(KEY_SUGGESTIONS, true); }
++    public void setSuggestionsEnabled(boolean v) { prefs.edit().putBoolean(KEY_SUGGESTIONS, v).apply(); }
+ 
+     public float getHeightScale() { return prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f); }
+     public void setHeightScale(float scale) { prefs.edit().putFloat(KEY_HEIGHT_SCALE, scale).apply(); }
+diff --git a/app/src/main/java/com/customkeyboard/MainActivity.java b/app/src/main/java/com/customkeyboard/MainActivity.java
+index 71d8e88..b9a6d38 100644
+--- a/app/src/main/java/com/customkeyboard/MainActivity.java
++++ b/app/src/main/java/com/customkeyboard/MainActivity.java
+@@ -83,6 +83,9 @@ public class MainActivity extends AppCompatActivity {
+         addCheckbox(main, "📋 Clipboard History", "Remember copied text for quick access",
+             prefs.isClipboardHistoryEnabled(), prefs::setClipboardHistoryEnabled);
+ 
++        addCheckbox(main, "💡 Word Suggestions", "Show word completions while typing",
++            prefs.isSuggestionsEnabled(), prefs::setSuggestionsEnabled);
++
+         addCheckbox(main, "🇧🇩 Bangla Translation", "Show translation button on toolbar",
+             prefs.isBanglaTranslationEnabled(), prefs::setBanglaTranslationEnabled);
+ 
+-- 
+2.43.0
+
+
+From 9d538959cd97a54f4cd4995ce3dfde9fabd88b53 Mon Sep 17 00:00:00 2001
+From: Bug Fix <fix@customkeyboard.local>
+Date: Fri, 24 Apr 2026 12:31:44 +0800
+Subject: [PATCH 2/3] fix: SecurityException on API 34+ reading
+ Settings.Secure.ENABLED_INPUT_METHODS
+
+Android 14 (API 34) blocks reading ENABLED_INPUT_METHODS for apps
+targeting SDK 34+. Replaced with InputMethodManager.getEnabledInputMethodList()
+and wrapped DEFAULT_INPUT_METHOD read in try-catch for forward compatibility.
+---
+ .../java/com/customkeyboard/MainActivity.java | 35 ++++++++++++++++---
+ 1 file changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/app/src/main/java/com/customkeyboard/MainActivity.java b/app/src/main/java/com/customkeyboard/MainActivity.java
+index b9a6d38..b0802f7 100644
+--- a/app/src/main/java/com/customkeyboard/MainActivity.java
++++ b/app/src/main/java/com/customkeyboard/MainActivity.java
+@@ -6,6 +6,7 @@ import android.graphics.Typeface;
+ import android.os.Bundle;
+ import android.provider.Settings;
+ import android.view.View;
++import android.view.inputmethod.InputMethodInfo;
+ import android.view.inputmethod.InputMethodManager;
+ import android.widget.Button;
+ import android.widget.CheckBox;
+@@ -19,6 +20,8 @@ import android.widget.Toast;
+ 
+ import androidx.appcompat.app.AppCompatActivity;
+ 
++import java.util.List;
++
+ public class MainActivity extends AppCompatActivity {
+ 
+     private KeyboardPrefs prefs;
+@@ -367,11 +370,35 @@ public class MainActivity extends AppCompatActivity {
+     private void updateStatus() {
+         if (statusText == null) return;
+ 
+-        String enabledIMEs = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_INPUT_METHODS);
+-        boolean enabled = enabledIMEs != null && enabledIMEs.contains(getPackageName());
++        // Use InputMethodManager instead of Settings.Secure.ENABLED_INPUT_METHODS
++        // (blocked for targetSdk >= 34 on Android 14+)
++        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
++        boolean enabled = false;
++        boolean isCurrent = false;
++
++        if (imm != null) {
++            String myId = getPackageName() + "/" + CustomKeyboardService.class.getName();
+ 
+-        String currentIME = Settings.Secure.getString(getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+-        boolean isCurrent = currentIME != null && currentIME.contains(getPackageName());
++            // Check if our IME is in the enabled list
++            List<InputMethodInfo> enabledImes = imm.getEnabledInputMethodList();
++            for (InputMethodInfo imi : enabledImes) {
++                if (imi.getId().equals(myId)) {
++                    enabled = true;
++                    break;
++                }
++            }
++
++            // Check if we're the current default IME (wrapped in try-catch for API 34+)
++            try {
++                String currentId = Settings.Secure.getString(
++                    getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
++                isCurrent = currentId != null && currentId.equals(myId);
++            } catch (SecurityException e) {
++                // On API 34+, DEFAULT_INPUT_METHOD may also be unreadable.
++                // Fall back: if enabled, assume "enabled but not selected"
++                isCurrent = false;
++            }
++        }
+ 
+         if (isCurrent) {
+             statusText.setText("✅ Keyboard is active and ready!");
+-- 
+2.43.0
+
+
+From 2d4662ba677817bff7f229e2029ef6841ac05221 Mon Sep 17 00:00:00 2001
+From: Bug Fix <fix@customkeyboard.local>
+Date: Fri, 24 Apr 2026 12:34:49 +0800
+Subject: [PATCH 3/3] =?UTF-8?q?fix:=20remaining=20bugs=20=E2=80=94=20sugge?=
+ =?UTF-8?q?stion/clipboard/voice=20translation=20bypass=20+=20accessibilit?=
+ =?UTF-8?q?y?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+1. Suggestions now bypass translation (skipTranslation flag)
+   - Picking a suggestion no longer re-translates the already-correct word
+   - Translation buffer cleared on suggestion pick
+
+2. Clipboard paste bypasses translation
+   - Pasting 'hello' no longer gets transliterated
+
+3. Voice input bypasses translation
+   - Speech-to-text output committed as-is
+
+4. KeyView.performLongClick() now calls super
+   - Required for proper Android accessibility chain
+   - Was missing super call which breaks a11y event propagation
+---
+ .../customkeyboard/CustomKeyboardService.java | 20 +++++++++++++++----
+ .../main/java/com/customkeyboard/KeyView.java |  3 +++
+ 2 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/app/src/main/java/com/customkeyboard/CustomKeyboardService.java b/app/src/main/java/com/customkeyboard/CustomKeyboardService.java
+index 46bb9fc..3c1e466 100644
+--- a/app/src/main/java/com/customkeyboard/CustomKeyboardService.java
++++ b/app/src/main/java/com/customkeyboard/CustomKeyboardService.java
+@@ -76,6 +76,9 @@ public class CustomKeyboardService extends InputMethodService {
+     // EN→BN translation buffer (accumulates original English chars for word-level matching)
+     private StringBuilder translationBuffer = new StringBuilder();
+ 
++    // Flag to bypass translation (used for suggestion selection, voice input, clipboard paste)
++    private boolean skipTranslation = false;
++
+     // Key tracking for shift
+     private final List<KeyView> letterKeys = new ArrayList<>();
+ 
+@@ -139,10 +142,13 @@ public class CustomKeyboardService extends InputMethodService {
+         suggestionsBar.setOnSuggestionSelectedListener(word -> {
+             InputConnection ic = getIC();
+             if (ic != null) {
+-                // Delete current word, commit suggestion
++                // Delete current word, commit suggestion (skip translation for suggestion)
+                 ic.deleteSurroundingText(currentWord.length(), 0);
++                skipTranslation = true;
+                 ic.commitText(word + " ", 1);
++                skipTranslation = false;
+                 currentWord.setLength(0);
++                translationBuffer.setLength(0);
+                 suggestionsBar.hide();
+             }
+         });
+@@ -218,8 +224,8 @@ public class CustomKeyboardService extends InputMethodService {
+     private void commitText(String text, boolean haptic) {
+         InputConnection ic = getIC();
+         if (ic != null) {
+-            // Apply translation
+-            int transMode = prefs.getTranslationMode();
++            // Apply translation (unless bypassed)
++            int transMode = skipTranslation ? 0 : prefs.getTranslationMode();
+             String toCommit = text;
+ 
+             if (transMode == 1) {
+@@ -947,7 +953,11 @@ public class CustomKeyboardService extends InputMethodService {
+                 pasteBtn.setTypeface(null, Typeface.BOLD);
+                 pasteBtn.setPadding(dp(8), 0, 0, 0);
+                 final String clipContent = text;
+-                pasteBtn.setOnClickListener(v -> commitText(clipContent));
++                pasteBtn.setOnClickListener(v -> {
++                    skipTranslation = true;
++                    commitText(clipContent);
++                    skipTranslation = false;
++                });
+                 itemLayout.addView(pasteBtn);
+ 
+                 list.addView(itemLayout);
+@@ -1050,7 +1060,9 @@ public class CustomKeyboardService extends InputMethodService {
+                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                     if (matches != null && !matches.isEmpty()) {
+                         String text = matches.get(0);
++                        skipTranslation = true;
+                         commitText(text + " ", false);
++                        skipTranslation = false;
+                         if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
+                     }
+                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
+diff --git a/app/src/main/java/com/customkeyboard/KeyView.java b/app/src/main/java/com/customkeyboard/KeyView.java
+index b0e21f2..f130cc3 100644
+--- a/app/src/main/java/com/customkeyboard/KeyView.java
++++ b/app/src/main/java/com/customkeyboard/KeyView.java
+@@ -135,6 +135,9 @@ public class KeyView extends TextView {
+ 
+     @Override
+     public boolean performLongClick() {
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++            super.performLongClick();
++        }
+         if (listener != null) {
+             listener.onKeyLongPressed(keyLabel);
+         }
+-- 
+2.43.0
+
