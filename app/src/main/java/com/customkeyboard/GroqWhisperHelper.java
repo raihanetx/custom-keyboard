@@ -233,8 +233,6 @@ public class GroqWhisperHelper {
                     notifyError("No transcription returned");
                 }
 
-            } catch (InterruptedException e) {
-                // Cancelled
             } catch (Exception e) {
                 if (!Thread.interrupted()) {
                     Log.e(TAG, "Groq API call failed", e);
