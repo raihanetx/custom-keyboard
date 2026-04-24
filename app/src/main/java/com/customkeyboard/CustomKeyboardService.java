@@ -3,10 +3,7 @@ package com.customkeyboard;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.inputmethodservice.InputMethodService;
@@ -19,7 +16,6 @@ import android.os.VibrationEffect;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
-import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -195,10 +191,14 @@ public class CustomKeyboardService extends InputMethodService {
     }
 
     private void commitText(String text) {
+        commitText(text, true);
+    }
+
+    private void commitText(String text, boolean haptic) {
         InputConnection ic = getIC();
         if (ic != null) {
             ic.commitText(text, 1);
-            performHaptic();
+            if (haptic) performHaptic();
         }
     }
 
@@ -648,7 +648,7 @@ public class CustomKeyboardService extends InputMethodService {
         switch (type) {
             case SHIFT:
                 key.setTextColor(isCaps ? accentColor : Color.WHITE);
-                key.setBackground(roundedBg(isCaps ? Color.parseColor("#2A2A4A") : Color.parseColor("#2A2A4A"), dp(6)));
+                key.setBackground(roundedBg(isCaps ? accentColor : Color.parseColor("#2A2A4A"), dp(6)));
                 key.setOnClickListener(v -> {
                     if (isCaps && !isShiftLocked) {
                         isShiftLocked = true;
@@ -804,7 +804,6 @@ public class CustomKeyboardService extends InputMethodService {
     }
 
     private void updateShiftKeyVisual() {
-        // Find the shift key in the current keyboard and update its color
         if (keyboardContent.getChildCount() >= 3) {
             View thirdRow = keyboardContent.getChildAt(2);
             if (thirdRow instanceof LinearLayout) {
@@ -813,6 +812,7 @@ public class CustomKeyboardService extends InputMethodService {
                     TextView shiftKey = (TextView) firstKey;
                     if (shiftKey.getText().toString().equals("⇧")) {
                         shiftKey.setTextColor(isCaps ? accentColor : Color.WHITE);
+                        shiftKey.setBackground(roundedBg(isCaps ? accentColor : Color.parseColor("#2A2A4A"), dp(6)));
                     }
                 }
             }
@@ -869,7 +869,7 @@ public class CustomKeyboardService extends InputMethodService {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
                         String text = matches.get(0);
-                        commitText(text + " ");
+                        commitText(text + " ", false); // no haptic for voice
                         if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
                     }
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {

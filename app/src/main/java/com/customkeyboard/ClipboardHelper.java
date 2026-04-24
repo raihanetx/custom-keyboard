@@ -22,6 +22,8 @@ public class ClipboardHelper {
     }
 
     public void startListening(ClipboardCallback callback) {
+        // Remove old listener first to prevent stacking
+        stopListening();
         clipListener = () -> {
             ClipData clip = clipboardManager.getPrimaryClip();
             if (clip != null && clip.getItemCount() > 0) {
