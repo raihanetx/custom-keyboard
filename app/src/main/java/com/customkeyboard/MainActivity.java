@@ -81,16 +81,106 @@ public class MainActivity extends AppCompatActivity {
         addCheckbox(main, "🎤 Voice Typing", "Speech-to-text input via microphone",
             prefs.isVoiceEnabled(), prefs::setVoiceEnabled);
 
-        // Gemma Voice (AI-powered transcription)
+        // Voice Engine Selection
+        LinearLayout voiceEngineBox = settingsBox();
+        TextView voiceEngineLabel = new TextView(this);
+        voiceEngineLabel.setText("Voice Engine:");
+        voiceEngineLabel.setTextColor(Color.parseColor("#CCCCCC"));
+        voiceEngineLabel.setTextSize(14);
+        voiceEngineLabel.setPadding(dp(8), dp(4), dp(8), dp(8));
+        voiceEngineBox.addView(voiceEngineLabel);
+
+        RadioGroup voiceEngineGroup = new RadioGroup(this);
+        voiceEngineGroup.setOrientation(RadioGroup.VERTICAL);
+        voiceEngineGroup.setPadding(dp(4), 0, dp(8), dp(8));
+
+        int idAndroid = View.generateViewId();
+        int idGemma = View.generateViewId();
+        int idGroq = View.generateViewId();
+
+        RadioButton rbAndroid = makeRadio("Android (built-in, offline capable)", idAndroid);
+        RadioButton rbGemma = makeRadio("Gemma (Google AI Studio)", idGemma);
+        RadioButton rbGroq = makeRadio("Groq Whisper (fast, accurate)", idGroq);
+
+        voiceEngineGroup.addView(rbAndroid);
+        voiceEngineGroup.addView(rbGemma);
+        voiceEngineGroup.addView(rbGroq);
+
+        int curEngine = prefs.getVoiceEngine();
+        if (curEngine == 1) rbGemma.setChecked(true);
+        else if (curEngine == 2) rbGroq.setChecked(true);
+        else rbAndroid.setChecked(true);
+
+        voiceEngineGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            if (checkedId == idGemma) prefs.setVoiceEngine(1);
+            else if (checkedId == idGroq) prefs.setVoiceEngine(2);
+            else prefs.setVoiceEngine(0);
+        });
+        voiceEngineBox.addView(voiceEngineGroup);
+        main.addView(voiceEngineBox);
+
+        // Groq Whisper API Key
+        LinearLayout groqBox = settingsBox();
+        TextView groqTitle = new TextView(this);
+        groqTitle.setText("⚡ Groq Whisper Settings");
+        groqTitle.setTextColor(Color.parseColor("#F2F2F7"));
+        groqTitle.setTextSize(13);
+        groqTitle.setTypeface(null, Typeface.BOLD);
+        groqTitle.setPadding(dp(8), dp(4), dp(8), dp(4));
+        groqBox.addView(groqTitle);
+
+        TextView groqApiLabel = new TextView(this);
+        groqApiLabel.setText("Groq API Key:");
+        groqApiLabel.setTextColor(Color.parseColor("#CCCCCC"));
+        groqApiLabel.setTextSize(13);
+        groqApiLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
+        groqBox.addView(groqApiLabel);
+
+        EditText groqApiInput = new EditText(this);
+        groqApiInput.setText(prefs.getGroqApiKey());
+        groqApiInput.setTextColor(Color.WHITE);
+        groqApiInput.setTextSize(13);
+        groqApiInput.setHint("Paste your Groq API key here");
+        groqApiInput.setHintTextColor(Color.parseColor("#666666"));
+        groqApiInput.setBackgroundColor(Color.parseColor("#1C1C1E"));
+        groqApiInput.setPadding(dp(12), dp(8), dp(12), dp(8));
+        groqApiInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout.LayoutParams groqLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        groqLp.setMargins(dp(8), 0, dp(8), dp(8));
+        groqApiInput.setLayoutParams(groqLp);
+        groqApiInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                prefs.setGroqApiKey(s.toString().trim());
+            }
+        });
+        groqBox.addView(groqApiInput);
+
+        TextView groqHint = new TextView(this);
+        groqHint.setText("Uses whisper-large-v3-turbo • ~1s transcription\nGet key at console.groq.com → API Keys");
+        groqHint.setTextColor(Color.parseColor("#666666"));
+        groqHint.setTextSize(11);
+        groqHint.setPadding(dp(12), 0, dp(8), dp(8));
+        groqBox.addView(groqHint);
+        main.addView(groqBox);
+
+        // Gemma Voice API Key
         LinearLayout gemmaBox = settingsBox();
-        addCheckbox(gemmaBox, "🧠 Use Gemma Voice (AI)", "Better transcription via Google AI Studio",
-            prefs.isGemmaVoiceEnabled(), prefs::setGemmaVoiceEnabled);
+        TextView gemmaTitle = new TextView(this);
+        gemmaTitle.setText("🧠 Gemma Voice Settings");
+        gemmaTitle.setTextColor(Color.parseColor("#F2F2F7"));
+        gemmaTitle.setTextSize(13);
+        gemmaTitle.setTypeface(null, Typeface.BOLD);
+        gemmaTitle.setPadding(dp(8), dp(4), dp(8), dp(4));
+        gemmaBox.addView(gemmaTitle);
 
         TextView apiLabel = new TextView(this);
         apiLabel.setText("Google AI Studio API Key:");
         apiLabel.setTextColor(Color.parseColor("#CCCCCC"));
         apiLabel.setTextSize(13);
-        apiLabel.setPadding(dp(36), dp(4), dp(8), dp(4));
+        apiLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
         gemmaBox.addView(apiLabel);
 
         EditText apiInput = new EditText(this);
@@ -104,7 +194,7 @@ public class MainActivity extends AppCompatActivity {
         apiInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         LinearLayout.LayoutParams apiLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        apiLp.setMargins(dp(32), 0, dp(8), dp(8));
+        apiLp.setMargins(dp(8), 0, dp(8), dp(8));
         apiInput.setLayoutParams(apiLp);
         apiInput.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -119,7 +209,7 @@ public class MainActivity extends AppCompatActivity {
         apiHint.setText("Get key at aistudio.google.com → Get API key");
         apiHint.setTextColor(Color.parseColor("#666666"));
         apiHint.setTextSize(11);
-        apiHint.setPadding(dp(36), 0, dp(8), dp(8));
+        apiHint.setPadding(dp(12), 0, dp(8), dp(8));
         gemmaBox.addView(apiHint);
         main.addView(gemmaBox);
 

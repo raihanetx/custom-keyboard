@@ -18,6 +18,9 @@ public class KeyboardPrefs {
     private static final String KEY_SUGGESTIONS = "suggestions_enabled";
     private static final String KEY_GEMMA_API_KEY = "gemma_api_key";
     private static final String KEY_USE_GEMMA_VOICE = "use_gemma_voice";
+    private static final String KEY_GROQ_API_KEY = "groq_api_key";
+    // Voice engine: 0=Android SpeechRecognizer, 1=Gemma, 2=Groq Whisper
+    private static final String KEY_VOICE_ENGINE = "voice_engine";
 
     private final SharedPreferences prefs;
 
@@ -58,9 +61,17 @@ public class KeyboardPrefs {
     public float getHeightScale() { return prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f); }
     public void setHeightScale(float scale) { prefs.edit().putFloat(KEY_HEIGHT_SCALE, scale).apply(); }
 
+    // Gemma
     public String getGemmaApiKey() { return prefs.getString(KEY_GEMMA_API_KEY, ""); }
     public void setGemmaApiKey(String key) { prefs.edit().putString(KEY_GEMMA_API_KEY, key).apply(); }
-
     public boolean isGemmaVoiceEnabled() { return prefs.getBoolean(KEY_USE_GEMMA_VOICE, false); }
     public void setGemmaVoiceEnabled(boolean v) { prefs.edit().putBoolean(KEY_USE_GEMMA_VOICE, v).apply(); }
+
+    // Groq Whisper
+    public String getGroqApiKey() { return prefs.getString(KEY_GROQ_API_KEY, ""); }
+    public void setGroqApiKey(String key) { prefs.edit().putString(KEY_GROQ_API_KEY, key).apply(); }
+
+    // Voice engine selector: 0=Android, 1=Gemma, 2=Groq Whisper
+    public int getVoiceEngine() { return prefs.getInt(KEY_VOICE_ENGINE, 0); }
+    public void setVoiceEngine(int engine) { prefs.edit().putInt(KEY_VOICE_ENGINE, engine).apply(); }
 }

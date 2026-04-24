@@ -53,11 +53,14 @@ public class CustomKeyboardService extends InputMethodService {
     private Vibrator vibrator;
     private float density;
 
-    // Gemma voice
+    // Voice helpers
     private GemmaVoiceHelper gemmaVoiceHelper;
+    private GroqWhisperHelper groqWhisperHelper;
     private static String sGemmaApiKey = "";
+    private static String sGroqApiKey = "";
 
     public static String getGemmaApiKeyStatic() { return sGemmaApiKey; }
+    public static String getGroqApiKeyStatic() { return sGroqApiKey; }
 
     // Views
     private LinearLayout keyboardContainer;
@@ -135,7 +138,9 @@ public class CustomKeyboardService extends InputMethodService {
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         density = getResources().getDisplayMetrics().density;
         sGemmaApiKey = prefs.getGemmaApiKey();
+        sGroqApiKey = prefs.getGroqApiKey();
         gemmaVoiceHelper = new GemmaVoiceHelper();
+        groqWhisperHelper = new GroqWhisperHelper();
         loadTheme();
     }
 
@@ -193,6 +198,7 @@ public class CustomKeyboardService extends InputMethodService {
         cachedEditorInfo = attribute;
         cachedIC = getCurrentInputConnection();
         sGemmaApiKey = prefs.getGemmaApiKey();
+        sGroqApiKey = prefs.getGroqApiKey();
         if (clipboardHelper != null) clipboardHelper.startListening();
     }
 
@@ -220,7 +226,10 @@ public class CustomKeyboardService extends InputMethodService {
             speechRecognizer = null;
         }
         if (gemmaVoiceHelper != null) {
-            gemmaVoiceHelper.release(); // FIX: Use release() for full cleanup (stops recording + cancels API calls)
+            gemmaVoiceHelper.release();
+        }
+        if (groqWhisperHelper != null) {
+            groqWhisperHelper.release();
         }
         if (clipboardHelper != null) clipboardHelper.stopListening();
     }
@@ -1122,16 +1131,63 @@ public class CustomKeyboardService extends InputMethodService {
     }
 
     private void startVoiceInput() {
-        // FIX: Set isListening synchronously BEFORE any async operations
-        // to prevent double-starts from rapid tapping
         isListening = true;
 
-        // Use Gemma API if enabled and key is set
-        if (prefs.isGemmaVoiceEnabled() && gemmaVoiceHelper != null) {
+        int engine = prefs.getVoiceEngine();
+
+        // Engine 2: Groq Whisper
+        if (engine == 2 && groqWhisperHelper != null) {
+            String apiKey = prefs.getGroqApiKey();
+            if (apiKey == null || apiKey.isEmpty()) {
+                isListening = false;
+                showToast("Set Groq API key in keyboard settings first");
+                return;
+            }
+            sGroqApiKey = apiKey;
+
+            groqWhisperHelper.setCallback(new GroqWhisperHelper.VoiceCallback() {
+                @Override
+                public void onTranscription(String text) {
+                    skipTranslation = true;
+                    commitText(text + " ", false);
+                    skipTranslation = false;
+                    if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
+                        isListening = false;
+                    }, 1500);
+                }
+
+                @Override
+                public void onError(String message) {
+                    if (voiceStatusText != null) voiceStatusText.setText(message);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
+                        isListening = false;
+                    }, 2500);
+                }
+
+                @Override
+                public void onRecordingStateChanged(boolean recording) {
+                    if (recording) {
+                        if (voiceStatusText != null) {
+                            voiceStatusText.setText("🎤 Listening (Whisper)...");
+                            voiceStatusText.setVisibility(View.VISIBLE);
+                        }
+                    }
+                }
+            });
+
+            groqWhisperHelper.startRecording();
+            return;
+        }
+
+        // Engine 1: Gemma
+        if (engine == 1 && gemmaVoiceHelper != null) {
             String apiKey = prefs.getGemmaApiKey();
             if (apiKey == null || apiKey.isEmpty()) {
-                isListening = false; // FIX: Reset on early exit
-                showToast("Set API key in keyboard settings first");
+                isListening = false;
+                showToast("Set Gemma API key in keyboard settings first");
                 return;
             }
             sGemmaApiKey = apiKey;
@@ -1142,9 +1198,7 @@ public class CustomKeyboardService extends InputMethodService {
                     skipTranslation = true;
                     commitText(text + " ", false);
                     skipTranslation = false;
-                    if (voiceStatusText != null) {
-                        voiceStatusText.setText("✓ " + text);
-                    }
+                    if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
                         isListening = false;
@@ -1167,7 +1221,6 @@ public class CustomKeyboardService extends InputMethodService {
                             voiceStatusText.setText("🎤 Listening (Gemma)...");
                             voiceStatusText.setVisibility(View.VISIBLE);
                         }
-                        // FIX: isListening is already set synchronously in startVoiceInput()
                     }
                 }
             });
@@ -1176,9 +1229,9 @@ public class CustomKeyboardService extends InputMethodService {
             return;
         }
 
-        // Fallback: Android SpeechRecognizer
+        // Engine 0 (default): Android SpeechRecognizer
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            isListening = false; // FIX: Reset on early exit
+            isListening = false;
             showToast("Voice recognition not available");
             return;
         }
@@ -1246,19 +1299,23 @@ public class CustomKeyboardService extends InputMethodService {
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             speechRecognizer.startListening(intent);
-            // FIX: isListening already set synchronously at top of method
         } catch (Exception e) {
-            isListening = false; // FIX: Reset on error
+            isListening = false;
             showToast("Could not start voice input");
         }
     }
 
     private void stopVoiceInput() {
+        // Stop Groq Whisper if active
+        if (groqWhisperHelper != null && groqWhisperHelper.isRecording()) {
+            groqWhisperHelper.stopRecording();
+            if (voiceStatusText != null) voiceStatusText.setText("Processing...");
+            return;
+        }
         // Stop Gemma recording if active
         if (gemmaVoiceHelper != null && gemmaVoiceHelper.isRecording()) {
             gemmaVoiceHelper.stopRecording();
             if (voiceStatusText != null) voiceStatusText.setText("Processing...");
-            // isListening will be cleared by the callback
             return;
         }
         // Stop Android SpeechRecognizer
