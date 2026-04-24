@@ -81,42 +81,63 @@ public class MainActivity extends AppCompatActivity {
         addCheckbox(main, "🎤 Voice Typing", "Speech-to-text input via microphone",
             prefs.isVoiceEnabled(), prefs::setVoiceEnabled);
 
-        // Voice Engine Selection
+        // Voice Engine — per language
         LinearLayout voiceEngineBox = settingsBox();
         TextView voiceEngineLabel = new TextView(this);
-        voiceEngineLabel.setText("Voice Engine:");
-        voiceEngineLabel.setTextColor(Color.parseColor("#CCCCCC"));
+        voiceEngineLabel.setText("🎤 Voice Engine per Language:");
+        voiceEngineLabel.setTextColor(Color.parseColor("#F2F2F7"));
         voiceEngineLabel.setTextSize(14);
-        voiceEngineLabel.setPadding(dp(8), dp(4), dp(8), dp(8));
+        voiceEngineLabel.setTypeface(null, Typeface.BOLD);
+        voiceEngineLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
         voiceEngineBox.addView(voiceEngineLabel);
 
-        RadioGroup voiceEngineGroup = new RadioGroup(this);
-        voiceEngineGroup.setOrientation(RadioGroup.VERTICAL);
-        voiceEngineGroup.setPadding(dp(4), 0, dp(8), dp(8));
+        // English engine
+        TextView enLabel = new TextView(this);
+        enLabel.setText("English voice input:");
+        enLabel.setTextColor(Color.parseColor("#CCCCCC"));
+        enLabel.setTextSize(13);
+        enLabel.setPadding(dp(8), dp(8), dp(8), dp(2));
+        voiceEngineBox.addView(enLabel);
 
-        int idAndroid = View.generateViewId();
-        int idGemma = View.generateViewId();
-        int idGroq = View.generateViewId();
-
-        RadioButton rbAndroid = makeRadio("Android (built-in, offline capable)", idAndroid);
-        RadioButton rbGemma = makeRadio("Gemma (Google AI Studio)", idGemma);
-        RadioButton rbGroq = makeRadio("Groq Whisper (fast, accurate)", idGroq);
-
-        voiceEngineGroup.addView(rbAndroid);
-        voiceEngineGroup.addView(rbGemma);
-        voiceEngineGroup.addView(rbGroq);
-
-        int curEngine = prefs.getVoiceEngine();
-        if (curEngine == 1) rbGemma.setChecked(true);
-        else if (curEngine == 2) rbGroq.setChecked(true);
-        else rbAndroid.setChecked(true);
-
-        voiceEngineGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            if (checkedId == idGemma) prefs.setVoiceEngine(1);
-            else if (checkedId == idGroq) prefs.setVoiceEngine(2);
-            else prefs.setVoiceEngine(0);
+        RadioGroup enGroup = new RadioGroup(this);
+        enGroup.setOrientation(RadioGroup.HORIZONTAL);
+        enGroup.setPadding(dp(4), 0, dp(8), dp(4));
+        int idEnAndroid = View.generateViewId();
+        int idEnGroq = View.generateViewId();
+        RadioButton rbEnAndroid = makeRadio("Android", idEnAndroid);
+        RadioButton rbEnGroq = makeRadio("Groq Whisper", idEnGroq);
+        enGroup.addView(rbEnAndroid);
+        enGroup.addView(rbEnGroq);
+        if (prefs.getEnVoiceEngine() == 1) rbEnGroq.setChecked(true);
+        else rbEnAndroid.setChecked(true);
+        enGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            prefs.setEnVoiceEngine(checkedId == idEnGroq ? 1 : 0);
         });
-        voiceEngineBox.addView(voiceEngineGroup);
+        voiceEngineBox.addView(enGroup);
+
+        // Bangla engine
+        TextView bnLabel = new TextView(this);
+        bnLabel.setText("Bangla voice input:");
+        bnLabel.setTextColor(Color.parseColor("#CCCCCC"));
+        bnLabel.setTextSize(13);
+        bnLabel.setPadding(dp(8), dp(8), dp(8), dp(2));
+        voiceEngineBox.addView(bnLabel);
+
+        RadioGroup bnGroup = new RadioGroup(this);
+        bnGroup.setOrientation(RadioGroup.HORIZONTAL);
+        bnGroup.setPadding(dp(4), 0, dp(8), dp(4));
+        int idBnAndroid = View.generateViewId();
+        int idBnGroq = View.generateViewId();
+        RadioButton rbBnAndroid = makeRadio("Android", idBnAndroid);
+        RadioButton rbBnGroq = makeRadio("Groq Whisper", idBnGroq);
+        bnGroup.addView(rbBnAndroid);
+        bnGroup.addView(rbBnGroq);
+        if (prefs.getBnVoiceEngine() == 1) rbBnGroq.setChecked(true);
+        else rbBnAndroid.setChecked(true);
+        bnGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            prefs.setBnVoiceEngine(checkedId == idBnGroq ? 1 : 0);
+        });
+        voiceEngineBox.addView(bnGroup);
         main.addView(voiceEngineBox);
 
         // Groq Whisper API Key
@@ -159,7 +180,7 @@ public class MainActivity extends AppCompatActivity {
         groqBox.addView(groqApiInput);
 
         TextView groqHint = new TextView(this);
-        groqHint.setText("Uses whisper-large-v3-turbo • ~1s transcription\nGet key at console.groq.com → API Keys");
+        groqHint.setText("Uses whisper-large-v3 • Auto-detects language\nGet key at console.groq.com → API Keys");
         groqHint.setTextColor(Color.parseColor("#666666"));
         groqHint.setTextSize(11);
         groqHint.setPadding(dp(12), 0, dp(8), dp(8));

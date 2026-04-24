@@ -1133,10 +1133,13 @@ public class CustomKeyboardService extends InputMethodService {
     private void startVoiceInput() {
         isListening = true;
 
-        int engine = prefs.getVoiceEngine();
+        // Detect current language from the editor's locale
+        EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
+        String lang = prefs.detectLanguage(ei);
+        int engine = prefs.getVoiceEngineForLang(lang);
 
-        // Engine 2: Groq Whisper
-        if (engine == 2 && groqWhisperHelper != null) {
+        // Engine 1: Groq Whisper
+        if (engine == 1 && groqWhisperHelper != null) {
             String apiKey = prefs.getGroqApiKey();
             if (apiKey == null || apiKey.isEmpty()) {
                 isListening = false;
@@ -1145,6 +1148,7 @@ public class CustomKeyboardService extends InputMethodService {
             }
             sGroqApiKey = apiKey;
 
+            String langLabel = "bn".equals(lang) ? "Bangla" : "English";
             groqWhisperHelper.setCallback(new GroqWhisperHelper.VoiceCallback() {
                 @Override
                 public void onTranscription(String text) {
@@ -1171,7 +1175,7 @@ public class CustomKeyboardService extends InputMethodService {
                 public void onRecordingStateChanged(boolean recording) {
                     if (recording) {
                         if (voiceStatusText != null) {
-                            voiceStatusText.setText("🎤 Listening (Whisper)...");
+                            voiceStatusText.setText("🎤 Whisper (" + langLabel + ")...");
                             voiceStatusText.setVisibility(View.VISIBLE);
                         }
                     }
@@ -1179,53 +1183,6 @@ public class CustomKeyboardService extends InputMethodService {
             });
 
             groqWhisperHelper.startRecording();
-            return;
-        }
-
-        // Engine 1: Gemma
-        if (engine == 1 && gemmaVoiceHelper != null) {
-            String apiKey = prefs.getGemmaApiKey();
-            if (apiKey == null || apiKey.isEmpty()) {
-                isListening = false;
-                showToast("Set Gemma API key in keyboard settings first");
-                return;
-            }
-            sGemmaApiKey = apiKey;
-
-            gemmaVoiceHelper.setCallback(new GemmaVoiceHelper.VoiceCallback() {
-                @Override
-                public void onTranscription(String text) {
-                    skipTranslation = true;
-                    commitText(text + " ", false);
-                    skipTranslation = false;
-                    if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
-                        isListening = false;
-                    }, 1500);
-                }
-
-                @Override
-                public void onError(String message) {
-                    if (voiceStatusText != null) voiceStatusText.setText(message);
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
-                        isListening = false;
-                    }, 2500);
-                }
-
-                @Override
-                public void onRecordingStateChanged(boolean recording) {
-                    if (recording) {
-                        if (voiceStatusText != null) {
-                            voiceStatusText.setText("🎤 Listening (Gemma)...");
-                            voiceStatusText.setVisibility(View.VISIBLE);
-                        }
-                    }
-                }
-            });
-
-            gemmaVoiceHelper.startRecording();
             return;
         }
 
@@ -1293,9 +1250,14 @@ public class CustomKeyboardService extends InputMethodService {
                 @Override public void onEvent(int eventType, Bundle params) {}
             });
 
+            // Set language for Android recognizer
             Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+            if ("bn".equals(lang)) {
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn_BD");
+            } else {
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+            }
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             speechRecognizer.startListening(intent);

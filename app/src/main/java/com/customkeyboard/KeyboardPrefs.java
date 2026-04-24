@@ -9,18 +9,20 @@ public class KeyboardPrefs {
     private static final String KEY_CLIPBOARD_ENABLED = "clipboard_enabled";
     private static final String KEY_CLIPBOARD_HISTORY = "clipboard_history_enabled";
     private static final String KEY_BANGLA_TRANSLATION = "bangla_translation";
-    private static final String KEY_TRANSLATION_MODE = "translation_mode"; // 0=off, 1=bangla_to_en, 2=en_to_bangla
+    private static final String KEY_TRANSLATION_MODE = "translation_mode";
     private static final String KEY_VIBRATE = "vibrate";
     private static final String KEY_POPUP = "popup";
-    private static final String KEY_THEME = "theme"; // 0=dark, 1=light, 2=amoled, 3=blue
+    private static final String KEY_THEME = "theme";
     private static final String KEY_AUTO_CAP = "auto_capitalize";
     private static final String KEY_HEIGHT_SCALE = "height_scale";
     private static final String KEY_SUGGESTIONS = "suggestions_enabled";
     private static final String KEY_GEMMA_API_KEY = "gemma_api_key";
     private static final String KEY_USE_GEMMA_VOICE = "use_gemma_voice";
     private static final String KEY_GROQ_API_KEY = "groq_api_key";
-    // Voice engine: 0=Android SpeechRecognizer, 1=Gemma, 2=Groq Whisper
-    private static final String KEY_VOICE_ENGINE = "voice_engine";
+
+    // Per-language voice engine: 0=Android, 1=Groq Whisper
+    private static final String KEY_EN_VOICE_ENGINE = "en_voice_engine";
+    private static final String KEY_BN_VOICE_ENGINE = "bn_voice_engine";
 
     private final SharedPreferences prefs;
 
@@ -71,7 +73,42 @@ public class KeyboardPrefs {
     public String getGroqApiKey() { return prefs.getString(KEY_GROQ_API_KEY, ""); }
     public void setGroqApiKey(String key) { prefs.edit().putString(KEY_GROQ_API_KEY, key).apply(); }
 
-    // Voice engine selector: 0=Android, 1=Gemma, 2=Groq Whisper
-    public int getVoiceEngine() { return prefs.getInt(KEY_VOICE_ENGINE, 0); }
-    public void setVoiceEngine(int engine) { prefs.edit().putInt(KEY_VOICE_ENGINE, engine).apply(); }
+    // Per-language voice engine: 0=Android, 1=Groq Whisper
+    public int getEnVoiceEngine() { return prefs.getInt(KEY_EN_VOICE_ENGINE, 0); }
+    public void setEnVoiceEngine(int engine) { prefs.edit().putInt(KEY_EN_VOICE_ENGINE, engine).apply(); }
+
+    public int getBnVoiceEngine() { return prefs.getInt(KEY_BN_VOICE_ENGINE, 0); }
+    public void setBnVoiceEngine(int engine) { prefs.edit().putInt(KEY_BN_VOICE_ENGINE, engine).apply(); }
+
+    /**
+     * Detect current input language from the active editor's subtype locale.
+     * Returns "bn" for Bangla, "en" for everything else.
+     */
+    public String detectLanguage(android.view.inputmethod.EditorInfo ei) {
+        if (ei != null) {
+            String locale = null;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                android.os.LocaleList locales = ei.getHintLocales();
+                if (locales != null && locales.size() > 0) {
+                    locale = locales.get(0).getLanguage();
+                }
+            }
+            if (locale == null && ei.inputType != 0) {
+                // Fallback: check imeOptions or extras
+                locale = "";
+            }
+            if ("bn".equals(locale) || "bn_BD".equals(locale) || "bn_IN".equals(locale)) {
+                return "bn";
+            }
+        }
+        return "en";
+    }
+
+    /**
+     * Get voice engine for the given language code ("en" or "bn").
+     */
+    public int getVoiceEngineForLang(String lang) {
+        if ("bn".equals(lang)) return getBnVoiceEngine();
+        return getEnVoiceEngine();
+    }
 }

@@ -31,7 +31,7 @@ public class GroqWhisperHelper {
 
     private static final String TAG = "GroqWhisperHelper";
     private static final String API_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
-    private static final String MODEL = "whisper-large-v3-turbo";
+    private static final String MODEL = "whisper-large-v3";
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL = AudioFormat.CHANNEL_IN_MONO;
     private static final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
