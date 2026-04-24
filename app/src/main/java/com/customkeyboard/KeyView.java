@@ -135,6 +135,9 @@ public class KeyView extends TextView {
 
     @Override
     public boolean performLongClick() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            super.performLongClick();
+        }
         if (listener != null) {
             listener.onKeyLongPressed(keyLabel);
         }

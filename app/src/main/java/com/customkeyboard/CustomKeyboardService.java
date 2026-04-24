@@ -76,6 +76,9 @@ public class CustomKeyboardService extends InputMethodService {
     // EN→BN translation buffer (accumulates original English chars for word-level matching)
     private StringBuilder translationBuffer = new StringBuilder();
 
+    // Flag to bypass translation (used for suggestion selection, voice input, clipboard paste)
+    private boolean skipTranslation = false;
+
     // Key tracking for shift
     private final List<KeyView> letterKeys = new ArrayList<>();
 
@@ -139,10 +142,13 @@ public class CustomKeyboardService extends InputMethodService {
         suggestionsBar.setOnSuggestionSelectedListener(word -> {
             InputConnection ic = getIC();
             if (ic != null) {
-                // Delete current word, commit suggestion
+                // Delete current word, commit suggestion (skip translation for suggestion)
                 ic.deleteSurroundingText(currentWord.length(), 0);
+                skipTranslation = true;
                 ic.commitText(word + " ", 1);
+                skipTranslation = false;
                 currentWord.setLength(0);
+                translationBuffer.setLength(0);
                 suggestionsBar.hide();
             }
         });
@@ -218,8 +224,8 @@ public class CustomKeyboardService extends InputMethodService {
     private void commitText(String text, boolean haptic) {
         InputConnection ic = getIC();
         if (ic != null) {
-            // Apply translation
-            int transMode = prefs.getTranslationMode();
+            // Apply translation (unless bypassed)
+            int transMode = skipTranslation ? 0 : prefs.getTranslationMode();
             String toCommit = text;
 
             if (transMode == 1) {
@@ -947,7 +953,11 @@ public class CustomKeyboardService extends InputMethodService {
                 pasteBtn.setTypeface(null, Typeface.BOLD);
                 pasteBtn.setPadding(dp(8), 0, 0, 0);
                 final String clipContent = text;
-                pasteBtn.setOnClickListener(v -> commitText(clipContent));
+                pasteBtn.setOnClickListener(v -> {
+                    skipTranslation = true;
+                    commitText(clipContent);
+                    skipTranslation = false;
+                });
                 itemLayout.addView(pasteBtn);
 
                 list.addView(itemLayout);
@@ -1050,7 +1060,9 @@ public class CustomKeyboardService extends InputMethodService {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
                         String text = matches.get(0);
+                        skipTranslation = true;
                         commitText(text + " ", false);
+                        skipTranslation = false;
                         if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
                     }
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
