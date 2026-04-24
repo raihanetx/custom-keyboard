@@ -3,7 +3,11 @@ package com.customkeyboard;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.inputmethodservice.InputMethodService;
 import android.os.Build;
@@ -15,12 +19,15 @@ import android.os.VibrationEffect;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.GridLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -52,13 +59,21 @@ public class CustomKeyboardService extends InputMethodService {
     private LinearLayout keyboardContent;
     private TextView voiceStatusText;
     private Vibrator vibrator;
+    private float density;
 
     // Colors
     private int bgColor, keyColor, keyTextColor, accentColor, keyBorderColor, toolbarBg;
 
-    // Key dimensions
-    private int keyHeight;
-    private float heightScale;
+    // Key sizing
+    private int keyHeightPx;
+    private int keyMinWidthPx;
+
+    // Stored reference for reliability
+    private InputConnection cachedIC;
+    private EditorInfo cachedEditorInfo;
+
+    // Key view tracking for shift refresh
+    private final List<TextView> letterKeys = new ArrayList<>();
 
     // Emoji data
     private static final String[] EMOJI_SMILEYS = {
@@ -73,21 +88,18 @@ public class CustomKeyboardService extends InputMethodService {
         "😥","😢","😭","😱","😖","😣","😞","😓","😩","😫",
         "🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩"
     };
-
     private static final String[] EMOJI_GESTURES = {
         "👋","🤚","🖐️","✋","🖖","🫱","🫲","🫳","🫴","👌",
         "🤌","🤏","✌️","🤞","🫰","🤟","🤘","🤙","👈","👉",
         "👆","🖕","👇","☝️","🫵","👍","👎","✊","👊","🤛",
         "🤜","👏","🙌","🫶","👐","🤲","🤝","🙏","✍️","💪"
     };
-
     private static final String[] EMOJI_HEARTS = {
         "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔",
         "❤️‍🔥","❤️‍🩹","❣️","💕","💞","💓","💗","💖","💘","💝",
         "💟","☮️","✝️","☪️","🕉️","☸️","🪯","✡️","🔯","🕎",
         "☯️","☦️","🛐","⛎","♈","♉","♊","♋","♌","♍"
     };
-
     private static final String[] EMOJI_OBJECTS = {
         "⚽","🏀","🏈","⚾","🥎","🎾","🏐","🏉","🥏","🎱",
         "🪀","🏓","🏸","🏒","🏑","🥍","🏏","🪃","🥅","⛳",
@@ -97,58 +109,123 @@ public class CustomKeyboardService extends InputMethodService {
         "🎤","🎧","🎼","🎹","🥁","🪘","🎷","🎺","🪗","🎸"
     };
 
+    // ==================== LIFECYCLE ====================
+
     @Override
     public void onCreate() {
         super.onCreate();
         prefs = new KeyboardPrefs(this);
         clipboardHelper = new ClipboardHelper(this);
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        density = getResources().getDisplayMetrics().density;
         loadTheme();
     }
 
     @Override
     public View onCreateInputView() {
         loadTheme();
+        letterKeys.clear();
+
         keyboardContainer = new LinearLayout(this);
         keyboardContainer.setOrientation(LinearLayout.VERTICAL);
         keyboardContainer.setBackgroundColor(bgColor);
+        keyboardContainer.setFocusable(true);
+        keyboardContainer.setFocusableInTouchMode(true);
+        keyboardContainer.setClickable(true);
 
         // Toolbar
         buildToolbar();
         keyboardContainer.addView(toolbarLayout);
 
-        // Keyboard content
+        // Keyboard content area
         keyboardContent = new LinearLayout(this);
         keyboardContent.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams kcLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
+        keyboardContent.setLayoutParams(kcLp);
         keyboardContainer.addView(keyboardContent);
 
-        // Load default keyboard
         showKeyboard(MODE_QWERTY);
-
         return keyboardContainer;
     }
 
+    @Override
+    public void onStartInput(EditorInfo attribute, boolean restarting) {
+        super.onStartInput(attribute, restarting);
+        cachedEditorInfo = attribute;
+        cachedIC = getCurrentInputConnection();
+
+        if (clipboardHelper != null) {
+            clipboardHelper.startListening(null);
+        }
+    }
+
+    @Override
+    public void onStartInputView(EditorInfo attribute, boolean restarting) {
+        super.onStartInputView(attribute, restarting);
+        cachedIC = getCurrentInputConnection();
+        cachedEditorInfo = attribute;
+    }
+
+    @Override
+    public void onFinishInput() {
+        super.onFinishInput();
+        cachedIC = null;
+        cachedEditorInfo = null;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (speechRecognizer != null) {
+            speechRecognizer.destroy();
+            speechRecognizer = null;
+        }
+        if (clipboardHelper != null) {
+            clipboardHelper.stopListening();
+        }
+    }
+
+    // ==================== INPUT CONNECTION ====================
+
+    private InputConnection getIC() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) ic = cachedIC;
+        return ic;
+    }
+
+    private void commitText(String text) {
+        InputConnection ic = getIC();
+        if (ic != null) {
+            ic.commitText(text, 1);
+            performHaptic();
+        }
+    }
+
+    // ==================== THEME ====================
+
     private void loadTheme() {
-        heightScale = prefs.getHeightScale();
-        keyHeight = (int)(52 * getResources().getDisplayMetrics().density * heightScale);
+        float scale = prefs.getHeightScale();
+        keyHeightPx = (int)(54 * density * scale);
+        keyMinWidthPx = (int)(32 * density);
 
         int themeId = prefs.getTheme();
         switch (themeId) {
             case 1: // Light
-                bgColor = Color.parseColor("#F5F5F5");
+                bgColor = Color.parseColor("#F0F0F0");
                 keyColor = Color.parseColor("#FFFFFF");
-                keyTextColor = Color.parseColor("#1a1a1a");
+                keyTextColor = Color.parseColor("#1A1A1A");
                 accentColor = Color.parseColor("#E94560");
-                keyBorderColor = Color.parseColor("#DDDDDD");
-                toolbarBg = Color.parseColor("#E8E8E8");
+                keyBorderColor = Color.parseColor("#CCCCCC");
+                toolbarBg = Color.parseColor("#E0E0E0");
                 break;
             case 2: // AMOLED
                 bgColor = Color.parseColor("#000000");
-                keyColor = Color.parseColor("#1A1A1A");
-                keyTextColor = Color.parseColor("#FFFFFF");
+                keyColor = Color.parseColor("#111111");
+                keyTextColor = Color.parseColor("#EEEEEE");
                 accentColor = Color.parseColor("#E94560");
-                keyBorderColor = Color.parseColor("#333333");
-                toolbarBg = Color.parseColor("#0A0A0A");
+                keyBorderColor = Color.parseColor("#222222");
+                toolbarBg = Color.parseColor("#050505");
                 break;
             case 3: // Blue
                 bgColor = Color.parseColor("#0D1B2A");
@@ -176,67 +253,61 @@ public class CustomKeyboardService extends InputMethodService {
         toolbarLayout.setOrientation(LinearLayout.HORIZONTAL);
         toolbarLayout.setBackgroundColor(toolbarBg);
         toolbarLayout.setGravity(Gravity.CENTER_VERTICAL);
-        toolbarLayout.setPadding(dp(6), dp(4), dp(6), dp(4));
+        toolbarLayout.setPadding(dp(4), dp(4), dp(4), dp(4));
 
-        // Clipboard button
+        // Wrap in HorizontalScrollView for small screens
+        HorizontalScrollView toolbarScroll = new HorizontalScrollView(this);
+        toolbarScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout toolbarInner = new LinearLayout(this);
+        toolbarInner.setOrientation(LinearLayout.HORIZONTAL);
+        toolbarInner.setGravity(Gravity.CENTER_VERTICAL);
+
         if (prefs.isClipboardEnabled()) {
-            toolbarLayout.addView(createToolbarButton("📋", "Clipboard", v -> showKeyboard(MODE_CLIPBOARD)));
+            toolbarInner.addView(tb("📋", v -> showKeyboard(MODE_CLIPBOARD)));
         }
-
-        // Voice button
         if (prefs.isVoiceEnabled()) {
-            toolbarLayout.addView(createToolbarButton("🎤", "Voice", v -> toggleVoiceInput()));
+            toolbarInner.addView(tb("🎤", v -> toggleVoiceInput()));
         }
 
-        // Voice status text
+        // Voice status
         voiceStatusText = new TextView(this);
-        voiceStatusText.setTextSize(11);
+        voiceStatusText.setTextSize(10);
         voiceStatusText.setTextColor(Color.parseColor("#AAAAAA"));
         voiceStatusText.setVisibility(View.GONE);
         voiceStatusText.setPadding(dp(4), 0, dp(4), 0);
-        LinearLayout.LayoutParams voiceLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        voiceStatusText.setLayoutParams(voiceLp);
-        toolbarLayout.addView(voiceStatusText);
+        toolbarInner.addView(voiceStatusText);
 
-        // Translation toggle
         if (prefs.isBanglaTranslationEnabled()) {
             int mode = prefs.getTranslationMode();
             String label = mode == 1 ? "BN→EN" : mode == 2 ? "EN→BN" : "🌐";
-            toolbarLayout.addView(createToolbarButton(label, "Translate", v -> cycleTranslationMode()));
+            toolbarInner.addView(tb(label, v -> cycleTranslationMode()));
         }
 
-        // Emoji button
-        toolbarLayout.addView(createToolbarButton("😊", "Emoji", v -> showKeyboard(MODE_EMOJI)));
-
-        // Numbers button
-        toolbarLayout.addView(createToolbarButton("123", "Numbers", v -> showKeyboard(MODE_NUMBERS)));
-
-        // Symbols button
-        toolbarLayout.addView(createToolbarButton("#+=", "Symbols", v -> showKeyboard(MODE_SYMBOLS)));
-
-        // Settings button
-        toolbarLayout.addView(createToolbarButton("⚙️", "Settings", v -> openSettings()));
-
-        // Keyboard switch button
-        toolbarLayout.addView(createToolbarButton("⌨️", "Switch", v -> {
+        toolbarInner.addView(tb("😊", v -> showKeyboard(MODE_EMOJI)));
+        toolbarInner.addView(tb("123", v -> showKeyboard(MODE_NUMBERS)));
+        toolbarInner.addView(tb("#+=", v -> showKeyboard(MODE_SYMBOLS)));
+        toolbarInner.addView(tb("⚙️", v -> openSettings()));
+        toolbarInner.addView(tb("⌨️", v -> {
             try {
-                android.view.inputmethod.InputMethodManager imm = 
+                android.view.inputmethod.InputMethodManager imm =
                     (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (imm != null) imm.showInputMethodPicker();
-            } catch (Exception e) { /* ignore */ }
+            } catch (Exception ignored) {}
         }));
+
+        toolbarScroll.addView(toolbarInner);
+        toolbarLayout.addView(toolbarScroll);
     }
 
-    private TextView createToolbarButton(String text, String contentDesc, View.OnClickListener listener) {
+    private TextView tb(String text, View.OnClickListener listener) {
         TextView btn = new TextView(this);
         btn.setText(text);
-        btn.setTextSize(14);
+        btn.setTextSize(13);
         btn.setTextColor(accentColor);
         btn.setGravity(Gravity.CENTER);
-        btn.setPadding(dp(8), dp(4), dp(8), dp(4));
-        btn.setContentDescription(contentDesc);
+        btn.setPadding(dp(10), dp(6), dp(10), dp(6));
         btn.setOnClickListener(listener);
-        btn.setBackground(createRoundedBg(keyColor, dp(6)));
+        btn.setBackground(roundedBg(keyColor, dp(6)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.setMargins(dp(2), 0, dp(2), 0);
@@ -244,33 +315,25 @@ public class CustomKeyboardService extends InputMethodService {
         return btn;
     }
 
-
-    // ==================== KEYBOARD LAYOUTS ====================
+    // ==================== KEYBOARD MODES ====================
 
     private void showKeyboard(int mode) {
         currentMode = mode;
         keyboardContent.removeAllViews();
+        letterKeys.clear();
 
         switch (mode) {
-            case MODE_QWERTY:
-                buildQwertyKeyboard();
-                break;
-            case MODE_SYMBOLS:
-                buildSymbolsKeyboard();
-                break;
-            case MODE_NUMBERS:
-                buildNumbersKeyboard();
-                break;
-            case MODE_EMOJI:
-                buildEmojiKeyboard();
-                break;
-            case MODE_CLIPBOARD:
-                buildClipboardKeyboard();
-                break;
+            case MODE_QWERTY:   buildQwerty(); break;
+            case MODE_SYMBOLS:  buildSymbols(); break;
+            case MODE_NUMBERS:  buildNumbers(); break;
+            case MODE_EMOJI:    buildEmoji(); break;
+            case MODE_CLIPBOARD: buildClipboard(); break;
         }
     }
 
-    private void buildQwertyKeyboard() {
+    // ==================== QWERTY ====================
+
+    private void buildQwerty() {
         String[][] rows = {
             {"q","w","e","r","t","y","u","i","o","p"},
             {"a","s","d","f","g","h","j","k","l"},
@@ -278,72 +341,38 @@ public class CustomKeyboardService extends InputMethodService {
             {"123",",","🌐","space",".","↵"}
         };
 
-        for (int r = 0; r < rows.length; r++) {
-            LinearLayout row = createKeyRow();
-            for (int i = 0; i < rows[r].length; i++) {
-                String key = rows[r][i];
-                switch (key) {
-                    case "⇧":
-                        row.addView(createSpecialKey("⇧", KeyEvent.KEYCODE_SHIFT_LEFT, getShiftBg()));
-                        break;
-                    case "⌫":
-                        row.addView(createSpecialKey("⌫", KeyEvent.KEYCODE_DEL, getAccentBg()));
-                        break;
-                    case "↵":
-                        row.addView(createSpecialKey("↵", KeyEvent.KEYCODE_ENTER, getAccentBg()));
-                        break;
-                    case "space":
-                        row.addView(createSpaceKey());
-                        break;
-                    case "123":
-                        row.addView(createSpecialKey("123", -100, getSecondaryBg(), v -> showKeyboard(MODE_NUMBERS)));
-                        break;
-                    case "🌐":
-                        row.addView(createSpecialKey("🌐", -200, getSecondaryBg(), v -> cycleTranslationMode()));
-                        break;
-                    default:
-                        row.addView(createLetterKey(key));
-                        break;
+        for (String[] rowKeys : rows) {
+            LinearLayout row = makeRow();
+            for (String k : rowKeys) {
+                switch (k) {
+                    case "⇧":  row.addView(makeKey("⇧", Type.SHIFT, null)); break;
+                    case "⌫":  row.addView(makeKey("⌫", Type.DELETE, null)); break;
+                    case "↵":  row.addView(makeKey("↵", Type.ENTER, null)); break;
+                    case "space": row.addView(makeSpaceKey()); break;
+                    case "123": row.addView(makeKey("123", Type.MODE_NUM, null)); break;
+                    case "🌐": row.addView(makeKey("🌐", Type.TRANSLATE, null)); break;
+                    default:   row.addView(makeLetterKey(k)); break;
                 }
             }
             keyboardContent.addView(row);
         }
     }
 
-    private void buildSymbolsKeyboard() {
+    // ==================== SYMBOLS ====================
+
+    private void buildSymbols() {
         String[][] rows = {
             {"1","2","3","4","5","6","7","8","9","0"},
             {"@","#","$","%","&","-","_","(",")","/"},
             {"*","\"","'",";",":","!","?","~","`","⌫"},
             {"ABC",",",".","+","=","space","…","—","↵"}
         };
-
-        for (String[] rowKeys : rows) {
-            LinearLayout row = createKeyRow();
-            for (String key : rowKeys) {
-                switch (key) {
-                    case "⌫":
-                        row.addView(createSpecialKey("⌫", KeyEvent.KEYCODE_DEL, getAccentBg()));
-                        break;
-                    case "↵":
-                        row.addView(createSpecialKey("↵", KeyEvent.KEYCODE_ENTER, getAccentBg()));
-                        break;
-                    case "space":
-                        row.addView(createSpaceKey());
-                        break;
-                    case "ABC":
-                        row.addView(createSpecialKey("ABC", -100, getSecondaryBg(), v -> showKeyboard(MODE_QWERTY)));
-                        break;
-                    default:
-                        row.addView(createSymbolKey(key));
-                        break;
-                }
-            }
-            keyboardContent.addView(row);
-        }
+        buildGenericKeyboard(rows);
     }
 
-    private void buildNumbersKeyboard() {
+    // ==================== NUMBERS ====================
+
+    private void buildNumbers() {
         String[][] rows = {
             {"1","2","3"},
             {"4","5","6"},
@@ -351,77 +380,60 @@ public class CustomKeyboardService extends InputMethodService {
             {".","0","⌫"},
             {"ABC","◂","▸","space","↵"}
         };
+        buildGenericKeyboard(rows);
+    }
 
+    private void buildGenericKeyboard(String[][] rows) {
         for (String[] rowKeys : rows) {
-            LinearLayout row = createKeyRow();
-            for (String key : rowKeys) {
-                switch (key) {
-                    case "⌫":
-                        row.addView(createSpecialKey("⌫", KeyEvent.KEYCODE_DEL, getAccentBg()));
-                        break;
-                    case "↵":
-                        row.addView(createSpecialKey("↵", KeyEvent.KEYCODE_ENTER, getAccentBg()));
-                        break;
-                    case "space":
-                        row.addView(createSpaceKey());
-                        break;
-                    case "ABC":
-                        row.addView(createSpecialKey("ABC", -100, getSecondaryBg(), v -> showKeyboard(MODE_QWERTY)));
-                        break;
-                    case "◂":
-                        row.addView(createSpecialKey("◂", KeyEvent.KEYCODE_DPAD_LEFT, getSecondaryBg()));
-                        break;
-                    case "▸":
-                        row.addView(createSpecialKey("▸", KeyEvent.KEYCODE_DPAD_RIGHT, getSecondaryBg()));
-                        break;
-                    default:
-                        row.addView(createSymbolKey(key));
-                        break;
+            LinearLayout row = makeRow();
+            for (String k : rowKeys) {
+                switch (k) {
+                    case "⌫":  row.addView(makeKey("⌫", Type.DELETE, null)); break;
+                    case "↵":  row.addView(makeKey("↵", Type.ENTER, null)); break;
+                    case "space": row.addView(makeSpaceKey()); break;
+                    case "ABC": row.addView(makeKey("ABC", Type.MODE_QWERTY, null)); break;
+                    case "◂":  row.addView(makeKey("◂", Type.DPAD_LEFT, null)); break;
+                    case "▸":  row.addView(makeKey("▸", Type.DPAD_RIGHT, null)); break;
+                    default:   row.addView(makeCharKey(k)); break;
                 }
             }
             keyboardContent.addView(row);
         }
     }
 
-    private void buildEmojiKeyboard() {
-        // Category tabs
+    // ==================== EMOJI ====================
+
+    private void buildEmoji() {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setBackgroundColor(toolbarBg);
-        tabs.setPadding(dp(4), dp(2), dp(4), dp(2));
+        tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
 
-        String[] categories = {"😀", "👋", "❤️", "⚽"};
-        String[][] emojiData = {EMOJI_SMILEYS, EMOJI_GESTURES, EMOJI_HEARTS, EMOJI_OBJECTS};
+        String[][] emojiSets = {EMOJI_SMILEYS, EMOJI_GESTURES, EMOJI_HEARTS, EMOJI_OBJECTS};
+        String[] labels = {"😀", "👋", "❤️", "⚽", "ABC"};
 
-        for (int i = 0; i < categories.length; i++) {
+        for (int i = 0; i < labels.length; i++) {
             final int idx = i;
             TextView tab = new TextView(this);
-            tab.setText(categories[i]);
-            tab.setTextSize(18);
+            tab.setText(labels[i]);
+            tab.setTextSize(16);
             tab.setGravity(Gravity.CENTER);
-            tab.setPadding(dp(12), dp(6), dp(12), dp(6));
-            tab.setOnClickListener(v -> showEmojiCategory(emojiData[idx]));
+            tab.setPadding(dp(14), dp(8), dp(14), dp(8));
+            if (i == 4) {
+                tab.setTextColor(accentColor);
+                tab.setTextSize(13);
+            }
+            tab.setOnClickListener(v -> {
+                if (idx == 4) showKeyboard(MODE_QWERTY);
+                else showEmojiGrid(emojiSets[idx]);
+            });
             tabs.addView(tab);
         }
-
-        // Back to QWERTY
-        TextView backTab = new TextView(this);
-        backTab.setText("ABC");
-        backTab.setTextSize(14);
-        backTab.setTextColor(accentColor);
-        backTab.setGravity(Gravity.CENTER);
-        backTab.setPadding(dp(12), dp(6), dp(12), dp(6));
-        backTab.setOnClickListener(v -> showKeyboard(MODE_QWERTY));
-        tabs.addView(backTab);
-
         keyboardContent.addView(tabs);
-
-        // Default: smileys
-        showEmojiCategory(EMOJI_SMILEYS);
+        showEmojiGrid(EMOJI_SMILEYS);
     }
 
-    private void showEmojiCategory(String[] emojis) {
-        // Remove old emoji grid (keep tabs)
+    private void showEmojiGrid(String[] emojis) {
         while (keyboardContent.getChildCount() > 1) {
             keyboardContent.removeViewAt(1);
         }
@@ -435,39 +447,32 @@ public class CustomKeyboardService extends InputMethodService {
         grid.setPadding(dp(4), dp(4), dp(4), dp(4));
 
         for (String emoji : emojis) {
-            TextView emojiBtn = new TextView(this);
-            emojiBtn.setText(emoji);
-            emojiBtn.setTextSize(22);
-            emojiBtn.setGravity(Gravity.CENTER);
-            int pad = dp(6);
-            emojiBtn.setPadding(pad, pad, pad, pad);
-            emojiBtn.setOnClickListener(v -> {
-                InputConnection ic = getCurrentInputConnection();
-                if (ic != null) {
-                    ic.commitText(emoji, 1);
-                    performHaptic();
-                }
-            });
+            TextView btn = new TextView(this);
+            btn.setText(emoji);
+            btn.setTextSize(24);
+            btn.setGravity(Gravity.CENTER);
+            int p = dp(6);
+            btn.setPadding(p, p, p, p);
+            btn.setOnClickListener(v -> commitText(emoji));
 
             GridLayout.LayoutParams params = new GridLayout.LayoutParams();
             params.width = 0;
             params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1, 1);
             params.setMargins(dp(2), dp(2), dp(2), dp(2));
-            emojiBtn.setLayoutParams(params);
-            grid.addView(emojiBtn);
+            btn.setLayoutParams(params);
+            grid.addView(btn);
         }
 
         scroll.addView(grid);
         keyboardContent.addView(scroll);
     }
 
-    private void buildClipboardKeyboard() {
-        keyboardContent.removeAllViews();
+    // ==================== CLIPBOARD ====================
 
-        // Header
+    private void buildClipboard() {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setPadding(dp(8), dp(8), dp(8), dp(4));
+        header.setPadding(dp(12), dp(8), dp(12), dp(8));
         header.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView title = new TextView(this);
@@ -481,15 +486,14 @@ public class CustomKeyboardService extends InputMethodService {
         clearBtn.setText("Clear");
         clearBtn.setTextColor(Color.parseColor("#FF6B6B"));
         clearBtn.setTextSize(12);
+        clearBtn.setPadding(dp(8), 0, 0, 0);
         clearBtn.setOnClickListener(v -> {
             clipboardHelper.clearHistory();
             showKeyboard(MODE_CLIPBOARD);
         });
         header.addView(clearBtn);
-
         keyboardContent.addView(header);
 
-        // Clipboard items
         List<ClipData.Item> history = clipboardHelper.getHistory();
 
         if (history.isEmpty()) {
@@ -498,386 +502,422 @@ public class CustomKeyboardService extends InputMethodService {
             empty.setTextColor(Color.parseColor("#888888"));
             empty.setTextSize(13);
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(16), dp(24), dp(16), dp(24));
+            empty.setPadding(dp(16), dp(32), dp(16), dp(32));
             keyboardContent.addView(empty);
         } else {
             ScrollView scroll = new ScrollView(this);
+            scroll.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
             LinearLayout list = new LinearLayout(this);
             list.setOrientation(LinearLayout.VERTICAL);
-            list.setPadding(dp(4), 0, dp(4), dp(4));
+            list.setPadding(dp(8), 0, dp(8), dp(4));
 
-            for (int i = 0; i < Math.min(history.size(), 10); i++) {
+            for (int i = 0; i < Math.min(history.size(), 15); i++) {
                 ClipData.Item item = history.get(i);
                 CharSequence text = item.getText();
                 if (text == null) continue;
 
                 LinearLayout itemLayout = new LinearLayout(this);
                 itemLayout.setOrientation(LinearLayout.HORIZONTAL);
-                itemLayout.setPadding(dp(8), dp(6), dp(8), dp(6));
-                itemLayout.setBackground(createRoundedBg(keyColor, dp(6)));
+                itemLayout.setPadding(dp(10), dp(8), dp(10), dp(8));
+                itemLayout.setBackground(roundedBg(keyColor, dp(8)));
                 LinearLayout.LayoutParams itemLp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                itemLp.setMargins(0, 0, 0, dp(4));
+                itemLp.setMargins(0, 0, 0, dp(6));
                 itemLayout.setLayoutParams(itemLp);
 
                 TextView clipText = new TextView(this);
                 String display = text.toString();
-                if (display.length() > 100) display = display.substring(0, 100) + "…";
+                if (display.length() > 120) display = display.substring(0, 120) + "…";
                 clipText.setText(display);
                 clipText.setTextColor(keyTextColor);
                 clipText.setTextSize(13);
-                clipText.setMaxLines(2);
+                clipText.setMaxLines(3);
                 clipText.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
                 itemLayout.addView(clipText);
 
                 TextView pasteBtn = new TextView(this);
-                pasteBtn.setText("Paste");
+                pasteBtn.setText(" Paste ");
                 pasteBtn.setTextColor(accentColor);
                 pasteBtn.setTextSize(12);
+                pasteBtn.setTypeface(null, Typeface.BOLD);
                 pasteBtn.setPadding(dp(8), 0, 0, 0);
                 final String clipContent = text.toString();
-                pasteBtn.setOnClickListener(v -> {
-                    InputConnection ic = getCurrentInputConnection();
-                    if (ic != null) {
-                        ic.commitText(clipContent, 1);
-                        performHaptic();
-                    }
-                });
+                pasteBtn.setOnClickListener(v -> commitText(clipContent));
                 itemLayout.addView(pasteBtn);
 
                 list.addView(itemLayout);
             }
-
             scroll.addView(list);
             keyboardContent.addView(scroll);
         }
 
-        // Back button
+        // Back button row
         LinearLayout bottomRow = new LinearLayout(this);
-        bottomRow.setPadding(dp(4), dp(4), dp(4), dp(4));
-        bottomRow.addView(createSpecialKey("ABC", -100, getSecondaryBg(), v -> showKeyboard(MODE_QWERTY)));
-        LinearLayout.LayoutParams spacer = new LinearLayout.LayoutParams(0, 1, 1);
-        bottomRow.addView(new View(this), spacer);
+        bottomRow.setPadding(dp(8), dp(4), dp(8), dp(4));
+        bottomRow.addView(makeKey("ABC", Type.MODE_QWERTY, null));
         keyboardContent.addView(bottomRow);
     }
 
-    // ==================== KEY CREATION HELPERS ====================
+    // ==================== KEY CREATION ====================
 
-    private LinearLayout createKeyRow() {
+    private enum Type {
+        LETTER, CHAR, SHIFT, DELETE, ENTER, SPACE,
+        MODE_QWERTY, MODE_NUM, DPAD_LEFT, DPAD_RIGHT, TRANSLATE
+    }
+
+    private LinearLayout makeRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
-        lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+        lp.setMargins(dp(2), dp(1), dp(2), dp(1));
         row.setLayoutParams(lp);
         return row;
     }
 
-    private TextView createLetterKey(String letter) {
+    private TextView makeLetterKey(String letter) {
         TextView key = new TextView(this);
-        String display = isCaps ? letter.toUpperCase() : letter;
-        key.setText(display);
+        key.setText(isCaps ? letter.toUpperCase(Locale.getDefault()) : letter);
         key.setTextSize(20);
         key.setTextColor(keyTextColor);
         key.setGravity(Gravity.CENTER);
-        key.setBackground(createRoundedBg(keyColor, dp(5)));
-        key.setHeight(keyHeight);
+        key.setBackground(roundedBg(keyColor, dp(6)));
+        key.setMinimumWidth(keyMinWidthPx);
+        key.setMinimumHeight(keyHeightPx);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
         lp.setMargins(dp(2), 0, dp(2), 0);
         key.setLayoutParams(lp);
 
+        letterKeys.add(key);
+
         key.setOnClickListener(v -> {
-            InputConnection ic = getCurrentInputConnection();
-            if (ic != null) {
-                String toCommit = isCaps ? letter.toUpperCase() : letter;
+            String toCommit = isCaps ? letter.toUpperCase(Locale.getDefault()) : letter;
+            int transMode = prefs.getTranslationMode();
+            if (transMode != 0) {
+                toCommit = BanglaTranslator.translateWord(toCommit, transMode);
+            }
+            commitText(toCommit);
 
-                // Apply translation if enabled
-                int transMode = prefs.getTranslationMode();
-                if (transMode != 0) {
-                    toCommit = BanglaTranslator.translateWord(toCommit, transMode);
-                }
-
-                ic.commitText(toCommit, 1);
-                performHaptic();
-
-                // Auto-undo shift after one keypress
-                if (isCaps && !isShiftLocked) {
-                    isCaps = false;
-                    refreshQwertyKeys();
-                }
+            // Auto-undo shift after one keypress
+            if (isCaps && !isShiftLocked) {
+                isCaps = false;
+                updateShiftState();
             }
         });
 
         key.setOnLongClickListener(v -> {
-            // Long press for numbers/symbols on letter keys
-            String longPress = getLongPressChar(letter);
-            if (longPress != null) {
-                InputConnection ic = getCurrentInputConnection();
-                if (ic != null) {
-                    ic.commitText(longPress, 1);
-                    performHaptic();
-                }
-            }
+            String lp2 = getLongPressChar(letter);
+            if (lp2 != null) commitText(lp2);
             return true;
         });
 
         return key;
     }
 
-    private String getLongPressChar(String letter) {
-        switch (letter) {
-            case "q": return "1"; case "w": return "2"; case "e": return "3";
-            case "r": return "4"; case "t": return "5"; case "y": return "6";
-            case "u": return "7"; case "i": return "8"; case "o": return "9";
-            case "p": return "0";
-            case "a": return "@"; case "s": return "#"; case "d": return "$";
-            case "f": return "%"; case "g": return "&"; case "h": return "-";
-            case "j": return "+"; case "k": return "("; case "l": return ")";
-            case "z": return "*"; case "x": return "\""; case "c": return "'";
-            case "v": return ":"; case "b": return "!"; case "n": return "?";
-            case "m": return "/";
-            default: return null;
-        }
-    }
-
-    private TextView createSymbolKey(String symbol) {
+    private TextView makeCharKey(String ch) {
         TextView key = new TextView(this);
-        key.setText(symbol);
+        key.setText(ch);
         key.setTextSize(18);
         key.setTextColor(keyTextColor);
         key.setGravity(Gravity.CENTER);
-        key.setBackground(createRoundedBg(keyColor, dp(5)));
-        key.setHeight(keyHeight);
+        key.setBackground(roundedBg(keyColor, dp(6)));
+        key.setMinimumWidth(keyMinWidthPx);
+        key.setMinimumHeight(keyHeightPx);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
         lp.setMargins(dp(2), 0, dp(2), 0);
         key.setLayoutParams(lp);
 
-        key.setOnClickListener(v -> {
-            InputConnection ic = getCurrentInputConnection();
-            if (ic != null) {
-                ic.commitText(symbol, 1);
-                performHaptic();
-            }
-        });
-
+        key.setOnClickListener(v -> commitText(ch));
         return key;
     }
 
-    private TextView createSpecialKey(String label, int code, GradientDrawable bg) {
-        return createSpecialKey(label, code, bg, null);
-    }
-
-    private TextView createSpecialKey(String label, int code, GradientDrawable bg, View.OnClickListener customListener) {
+    private TextView makeKey(String label, Type type, View.OnClickListener custom) {
         TextView key = new TextView(this);
         key.setText(label);
-        key.setTextSize(16);
-        key.setTextColor(code == KeyEvent.KEYCODE_SHIFT_LEFT && isCaps ? accentColor : Color.WHITE);
+        key.setTextSize(15);
         key.setGravity(Gravity.CENTER);
-        key.setBackground(bg);
-        key.setHeight(keyHeight);
+        key.setMinimumHeight(keyHeightPx);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
         lp.setMargins(dp(2), 0, dp(2), 0);
         key.setLayoutParams(lp);
 
-        if (customListener != null) {
-            key.setOnClickListener(customListener);
-        } else {
-            key.setOnClickListener(v -> handleSpecialKey(code));
+        switch (type) {
+            case SHIFT:
+                key.setTextColor(isCaps ? accentColor : Color.WHITE);
+                key.setBackground(roundedBg(isCaps ? Color.parseColor("#2A2A4A") : Color.parseColor("#2A2A4A"), dp(6)));
+                key.setOnClickListener(v -> {
+                    if (isCaps && !isShiftLocked) {
+                        isShiftLocked = true;
+                    } else if (isShiftLocked) {
+                        isCaps = false;
+                        isShiftLocked = false;
+                    } else {
+                        isCaps = true;
+                    }
+                    updateShiftState();
+                });
+                break;
+            case DELETE:
+                key.setTextColor(Color.WHITE);
+                key.setBackground(roundedBg(accentColor, dp(6)));
+                key.setOnClickListener(v -> {
+                    InputConnection ic = getIC();
+                    if (ic != null) {
+                        ic.deleteSurroundingText(1, 0);
+                        performHaptic();
+                    }
+                });
+                // Long press repeat
+                key.setOnLongClickListener(v -> {
+                    Handler h = new Handler(Looper.getMainLooper());
+                    Runnable repeat = new Runnable() {
+                        @Override public void run() {
+                            InputConnection ic = getIC();
+                            if (ic != null) ic.deleteSurroundingText(1, 0);
+                            h.postDelayed(this, 80);
+                        }
+                    };
+                    h.postDelayed(repeat, 400);
+                    key.setOnTouchListener((vv, event) -> {
+                        if (event.getAction() == MotionEvent.ACTION_UP ||
+                            event.getAction() == MotionEvent.ACTION_CANCEL) {
+                            h.removeCallbacksAndMessages(null);
+                        }
+                        return false;
+                    });
+                    return true;
+                });
+                break;
+            case ENTER:
+                key.setTextColor(Color.WHITE);
+                key.setBackground(roundedBg(accentColor, dp(6)));
+                key.setOnClickListener(v -> {
+                    InputConnection ic = getIC();
+                    if (ic == null) return;
+                    EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
+                    if (ei != null) {
+                        int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
+                        if (action == EditorInfo.IME_ACTION_GO ||
+                            action == EditorInfo.IME_ACTION_SEARCH ||
+                            action == EditorInfo.IME_ACTION_SEND ||
+                            action == EditorInfo.IME_ACTION_NEXT ||
+                            action == EditorInfo.IME_ACTION_DONE) {
+                            ic.performEditorAction(action);
+                        } else {
+                            ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                            ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                        }
+                    } else {
+                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                    }
+                    performHaptic();
+                });
+                break;
+            case MODE_QWERTY:
+                key.setTextColor(accentColor);
+                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
+                key.setOnClickListener(v -> showKeyboard(MODE_QWERTY));
+                break;
+            case MODE_NUM:
+                key.setTextColor(accentColor);
+                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
+                key.setOnClickListener(v -> showKeyboard(MODE_NUMBERS));
+                break;
+            case TRANSLATE:
+                key.setTextColor(accentColor);
+                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
+                key.setOnClickListener(v -> cycleTranslationMode());
+                break;
+            case DPAD_LEFT:
+                key.setTextColor(Color.WHITE);
+                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
+                key.setOnClickListener(v -> {
+                    InputConnection ic = getIC();
+                    if (ic != null) {
+                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT));
+                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_LEFT));
+                        performHaptic();
+                    }
+                });
+                break;
+            case DPAD_RIGHT:
+                key.setTextColor(Color.WHITE);
+                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
+                key.setOnClickListener(v -> {
+                    InputConnection ic = getIC();
+                    if (ic != null) {
+                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
+                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT));
+                        performHaptic();
+                    }
+                });
+                break;
+        }
+
+        if (custom != null) {
+            key.setOnClickListener(custom);
         }
 
         return key;
     }
 
-    private TextView createSpaceKey() {
+    private TextView makeSpaceKey() {
         TextView key = new TextView(this);
 
-        // Show translation mode indicator on space bar
         int transMode = prefs.getTranslationMode();
         if (transMode == 1) key.setText("🌐 Bangla → English");
         else if (transMode == 2) key.setText("🌐 English → Bangla");
         else key.setText("Space");
 
-        key.setTextSize(13);
+        key.setTextSize(12);
         key.setTextColor(Color.parseColor("#AAAAAA"));
         key.setGravity(Gravity.CENTER);
-        key.setBackground(createRoundedBg(keyColor, dp(5)));
-        key.setHeight(keyHeight);
+        key.setBackground(roundedBg(keyColor, dp(6)));
+        key.setMinimumHeight(keyHeightPx);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3);
         lp.setMargins(dp(2), 0, dp(2), 0);
         key.setLayoutParams(lp);
 
-        key.setOnClickListener(v -> {
-            InputConnection ic = getCurrentInputConnection();
-            if (ic != null) {
-                ic.commitText(" ", 1);
-                performHaptic();
-            }
-        });
-
+        key.setOnClickListener(v -> commitText(" "));
         return key;
     }
 
-    // ==================== KEY HANDLING ====================
+    // ==================== SHIFT STATE ====================
 
-    private void handleSpecialKey(int code) {
-        InputConnection ic = getCurrentInputConnection();
-        if (ic == null) return;
-
-        performHaptic();
-
-        switch (code) {
-            case KeyEvent.KEYCODE_DEL:
-                ic.deleteSurroundingText(1, 0);
-                break;
-            case KeyEvent.KEYCODE_ENTER:
-                EditorInfo ei = getCurrentInputEditorInfo();
-                if (ei != null) {
-                    int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
-                    if (action == EditorInfo.IME_ACTION_GO ||
-                        action == EditorInfo.IME_ACTION_SEARCH ||
-                        action == EditorInfo.IME_ACTION_SEND ||
-                        action == EditorInfo.IME_ACTION_NEXT ||
-                        action == EditorInfo.IME_ACTION_DONE) {
-                        ic.performEditorAction(action);
-                    } else {
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
-                    }
-                }
-                break;
-            case KeyEvent.KEYCODE_SHIFT_LEFT:
-                if (isCaps && !isShiftLocked) {
-                    isShiftLocked = true;
-                } else if (isShiftLocked) {
-                    isCaps = false;
-                    isShiftLocked = false;
-                } else {
-                    isCaps = true;
-                }
-                refreshQwertyKeys();
-                break;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT));
-                break;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
-                break;
+    private void updateShiftState() {
+        // Update letter key labels without rebuilding the whole keyboard
+        for (TextView key : letterKeys) {
+            String text = key.getText().toString();
+            if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
+                key.setText(isCaps ? text.toUpperCase(Locale.getDefault()) : text.toLowerCase(Locale.getDefault()));
+            }
         }
+
+        // Update shift key appearance
+        updateShiftKeyVisual();
     }
 
-    private void refreshQwertyKeys() {
-        if (currentMode == MODE_QWERTY) {
-            showKeyboard(MODE_QWERTY);
+    private void updateShiftKeyVisual() {
+        // Find the shift key in the current keyboard and update its color
+        if (keyboardContent.getChildCount() >= 3) {
+            View thirdRow = keyboardContent.getChildAt(2);
+            if (thirdRow instanceof LinearLayout) {
+                View firstKey = ((LinearLayout) thirdRow).getChildAt(0);
+                if (firstKey instanceof TextView) {
+                    TextView shiftKey = (TextView) firstKey;
+                    if (shiftKey.getText().toString().equals("⇧")) {
+                        shiftKey.setTextColor(isCaps ? accentColor : Color.WHITE);
+                    }
+                }
+            }
         }
     }
 
     // ==================== VOICE INPUT ====================
 
     private void toggleVoiceInput() {
-        if (isListening) {
-            stopVoiceInput();
-        } else {
-            startVoiceInput();
-        }
+        if (isListening) stopVoiceInput();
+        else startVoiceInput();
     }
 
     private void startVoiceInput() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            showToast("Voice recognition not available");
+            showToast("Voice recognition not available on this device");
             return;
         }
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
-        speechRecognizer.setRecognitionListener(new RecognitionListener() {
-            @Override public void onReadyForSpeech(Bundle params) {
-                voiceStatusText.setText("Listening...");
-                voiceStatusText.setVisibility(View.VISIBLE);
-            }
-            @Override public void onBeginningOfSpeech() {
-                voiceStatusText.setText("🎤 Speaking...");
-            }
-            @Override public void onRmsChanged(float rmsdB) {}
-            @Override public void onBufferReceived(byte[] buffer) {}
-            @Override public void onEndOfSpeech() {
-                voiceStatusText.setText("Processing...");
-            }
-            @Override public void onError(int error) {
-                String msg;
-                switch (error) {
-                    case SpeechRecognizer.ERROR_NO_MATCH: msg = "No speech recognized"; break;
-                    case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: msg = "Speech timeout"; break;
-                    case SpeechRecognizer.ERROR_AUDIO: msg = "Audio error"; break;
-                    case SpeechRecognizer.ERROR_NETWORK: msg = "Network error"; break;
-                    default: msg = "Error: " + error;
-                }
-                voiceStatusText.setText(msg);
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    voiceStatusText.setVisibility(View.GONE);
-                    isListening = false;
-                }, 2000);
-            }
-            @Override public void onResults(android.os.Bundle results) {
-                ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (matches != null && !matches.isEmpty()) {
-                    String text = matches.get(0);
-                    InputConnection ic = getCurrentInputConnection();
-                    if (ic != null) {
-                        ic.commitText(text + " ", 1);
-                    }
-                    voiceStatusText.setText("✓ " + text);
-                }
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    voiceStatusText.setVisibility(View.GONE);
-                    isListening = false;
-                }, 1500);
-            }
-            @Override public void onPartialResults(android.os.Bundle partialResults) {
-                ArrayList<String> partial = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (partial != null && !partial.isEmpty()) {
-                    voiceStatusText.setText("🎤 " + partial.get(0));
-                }
-            }
-            @Override public void onEvent(int eventType, android.os.Bundle params) {}
-        });
-
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
-        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
-        intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-
         try {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            speechRecognizer.setRecognitionListener(new RecognitionListener() {
+                @Override public void onReadyForSpeech(Bundle params) {
+                    if (voiceStatusText != null) {
+                        voiceStatusText.setText("Listening...");
+                        voiceStatusText.setVisibility(View.VISIBLE);
+                    }
+                }
+                @Override public void onBeginningOfSpeech() {
+                    if (voiceStatusText != null) voiceStatusText.setText("🎤 Speaking...");
+                }
+                @Override public void onRmsChanged(float rmsdB) {}
+                @Override public void onBufferReceived(byte[] buffer) {}
+                @Override public void onEndOfSpeech() {
+                    if (voiceStatusText != null) voiceStatusText.setText("Processing...");
+                }
+                @Override public void onError(int error) {
+                    String msg;
+                    switch (error) {
+                        case SpeechRecognizer.ERROR_NO_MATCH: msg = "No speech recognized"; break;
+                        case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: msg = "Timeout"; break;
+                        case SpeechRecognizer.ERROR_AUDIO: msg = "Audio error"; break;
+                        case SpeechRecognizer.ERROR_NETWORK: msg = "Network error"; break;
+                        case SpeechRecognizer.ERROR_PERMISSION: msg = "Mic permission denied"; break;
+                        default: msg = "Error " + error;
+                    }
+                    if (voiceStatusText != null) voiceStatusText.setText(msg);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
+                        isListening = false;
+                    }, 2000);
+                }
+                @Override public void onResults(Bundle results) {
+                    ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (matches != null && !matches.isEmpty()) {
+                        String text = matches.get(0);
+                        commitText(text + " ");
+                        if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
+                    }
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
+                        isListening = false;
+                    }, 1500);
+                }
+                @Override public void onPartialResults(Bundle partialResults) {
+                    ArrayList<String> partial = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (partial != null && !partial.isEmpty() && voiceStatusText != null) {
+                        voiceStatusText.setText("🎤 " + partial.get(0));
+                    }
+                }
+                @Override public void onEvent(int eventType, Bundle params) {}
+            });
+
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             speechRecognizer.startListening(intent);
             isListening = true;
         } catch (Exception e) {
-            showToast("Could not start voice input");
+            showToast("Could not start voice input: " + e.getMessage());
         }
     }
 
     private void stopVoiceInput() {
         if (speechRecognizer != null) {
-            speechRecognizer.stopListening();
-            speechRecognizer.destroy();
+            try {
+                speechRecognizer.stopListening();
+                speechRecognizer.destroy();
+            } catch (Exception ignored) {}
             speechRecognizer = null;
         }
         isListening = false;
-        voiceStatusText.setVisibility(View.GONE);
+        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
     }
 
     // ==================== TRANSLATION ====================
 
     private void cycleTranslationMode() {
         int current = prefs.getTranslationMode();
-        int next = (current + 1) % 3; // 0 → 1 → 2 → 0
+        int next = (current + 1) % 3;
         prefs.setTranslationMode(next);
-
         String[] labels = {"Translation OFF", "Bangla → English", "English → Bangla"};
         showToast(labels[next]);
-
-        // Rebuild toolbar to update label
         rebuildToolbar();
     }
 
@@ -893,13 +933,13 @@ public class CustomKeyboardService extends InputMethodService {
 
     private void openSettings() {
         Intent intent = new Intent(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(intent);
     }
 
     // ==================== UTILITIES ====================
 
-    private GradientDrawable createRoundedBg(int color, int radius) {
+    private GradientDrawable roundedBg(int color, int radius) {
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(color);
         bg.setCornerRadius(radius);
@@ -907,30 +947,19 @@ public class CustomKeyboardService extends InputMethodService {
         return bg;
     }
 
-    private GradientDrawable getAccentBg() {
-        return createRoundedBg(accentColor, dp(5));
-    }
-
-    private GradientDrawable getSecondaryBg() {
-        return createRoundedBg(Color.parseColor("#2A2A4A"), dp(5));
-    }
-
-    private GradientDrawable getShiftBg() {
-        int color = isCaps ? accentColor : Color.parseColor("#2A2A4A");
-        return createRoundedBg(color, dp(5));
-    }
-
     private int dp(int dp) {
-        return (int)(dp * getResources().getDisplayMetrics().density);
+        return (int)(dp * density);
     }
 
     private void performHaptic() {
         if (prefs.isVibrateEnabled() && vibrator != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE));
-            } else {
-                vibrator.vibrate(20);
-            }
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    vibrator.vibrate(15);
+                }
+            } catch (Exception ignored) {}
         }
     }
 
@@ -938,24 +967,19 @@ public class CustomKeyboardService extends InputMethodService {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        if (speechRecognizer != null) {
-            speechRecognizer.destroy();
-        }
-        if (clipboardHelper != null) {
-            clipboardHelper.stopListening();
-        }
-    }
-
-    @Override
-    public void onStartInput(EditorInfo attribute, boolean restarting) {
-        super.onStartInput(attribute, restarting);
-        if (clipboardHelper != null) {
-            clipboardHelper.startListening(text -> {
-                // Clipboard changed — could show notification
-            });
+    private String getLongPressChar(String letter) {
+        switch (letter) {
+            case "q": return "1"; case "w": return "2"; case "e": return "3";
+            case "r": return "4"; case "t": return "5"; case "y": return "6";
+            case "u": return "7"; case "i": return "8"; case "o": return "9";
+            case "p": return "0";
+            case "a": return "@"; case "s": return "#"; case "d": return "$";
+            case "f": return "%"; case "g": return "&"; case "h": return "-";
+            case "j": return "+"; case "k": return "("; case "l": return ")";
+            case "z": return "*"; case "x": return "\""; case "c": return "'";
+            case "v": return ":"; case "b": return "!"; case "n": return "?";
+            case "m": return "/";
+            default: return null;
         }
     }
 }
