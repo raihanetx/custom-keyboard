@@ -73,6 +73,9 @@ public class CustomKeyboardService extends InputMethodService {
     private EditorInfo cachedEditorInfo;
     private StringBuilder currentWord = new StringBuilder();
 
+    // EN→BN translation buffer (accumulates original English chars for word-level matching)
+    private StringBuilder translationBuffer = new StringBuilder();
+
     // Key tracking for shift
     private final List<KeyView> letterKeys = new ArrayList<>();
 
@@ -125,6 +128,7 @@ public class CustomKeyboardService extends InputMethodService {
         loadTheme();
         letterKeys.clear();
         currentWord.setLength(0);
+        translationBuffer.setLength(0);
 
         keyboardContainer = new LinearLayout(this);
         keyboardContainer.setOrientation(LinearLayout.VERTICAL);
@@ -178,6 +182,7 @@ public class CustomKeyboardService extends InputMethodService {
     public void onFinishInput() {
         super.onFinishInput();
         currentWord.setLength(0);
+        translationBuffer.setLength(0);
     }
 
     @Override
@@ -213,12 +218,54 @@ public class CustomKeyboardService extends InputMethodService {
     private void commitText(String text, boolean haptic) {
         InputConnection ic = getIC();
         if (ic != null) {
-            ic.commitText(text, 1);
+            // Apply translation
+            int transMode = prefs.getTranslationMode();
+            String toCommit = text;
+
+            if (transMode == 1) {
+                // BN→EN: character-by-character transliteration (works for single chars)
+                toCommit = BanglaTranslator.translateWord(text, transMode);
+            } else if (transMode == 2) {
+                // EN→BN: word-level buffering for multi-character phonetic matching
+                if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
+                    translationBuffer.append(text.toLowerCase(Locale.getDefault()));
+                    // Try to flush matched parts of the buffer
+                    String translated = flushTranslationBuffer(ic);
+                    if (haptic) performHaptic();
+                    // Track for suggestions using translated text
+                    currentWord.append(translated);
+                    if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
+                        suggestionsBar.updateSuggestions(currentWord.toString());
+                    }
+                    return;
+                } else {
+                    // Non-letter (space, punctuation, etc.) — flush entire buffer first
+                    flushEntireBuffer(ic);
+                    translationBuffer.setLength(0);
+                    // Then commit the non-letter character as-is
+                    ic.commitText(text, 1);
+                    if (haptic) performHaptic();
+                    if (text.equals(" ") || text.equals("\n")) {
+                        currentWord.setLength(0);
+                        if (suggestionsBar != null) suggestionsBar.hide();
+                    }
+                    return;
+                }
+            }
+
+            // Auto-capitalize: if at start of sentence, force uppercase on first letter
+            if (toCommit.length() == 1 && Character.isLetter(toCommit.charAt(0)) && prefs.isAutoCapitalize()) {
+                if (isAtSentenceStart(ic)) {
+                    toCommit = toCommit.toUpperCase(Locale.getDefault());
+                }
+            }
+
+            ic.commitText(toCommit, 1);
             if (haptic) performHaptic();
 
             // Track current word for suggestions
             if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
-                currentWord.append(text);
+                currentWord.append(toCommit);
                 if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
                     suggestionsBar.updateSuggestions(currentWord.toString());
                 }
@@ -227,6 +274,92 @@ public class CustomKeyboardService extends InputMethodService {
                 if (suggestionsBar != null) suggestionsBar.hide();
             }
         }
+    }
+
+    /**
+     * Flush translation buffer by greedily matching the longest prefix.
+     * Returns the flushed (translated) text.
+     */
+    private String flushTranslationBuffer(InputConnection ic) {
+        StringBuilder output = new StringBuilder();
+        while (translationBuffer.length() > 0) {
+            // Check if entire remaining buffer matches
+            String full = translationBuffer.toString();
+            if (BanglaTranslator.containsKey(full)) {
+                // Check if it's a prefix of a longer key — if so, keep buffering
+                if (BanglaTranslator.isPrefixOfLongerKey(full)) {
+                    break; // wait for more input
+                }
+                output.append(BanglaTranslator.getTranslation(full));
+                translationBuffer.setLength(0);
+                break;
+            }
+
+            // Try to find the longest matching prefix (3, 2, 1 chars)
+            boolean matched = false;
+            for (int len = Math.min(3, translationBuffer.length()); len >= 1; len--) {
+                String sub = translationBuffer.substring(0, len);
+                if (BanglaTranslator.containsKey(sub)) {
+                    // Check if this is a prefix of a longer key — keep buffering if so
+                    if (len < translationBuffer.length() || BanglaTranslator.isPrefixOfLongerKey(sub)) {
+                        // Don't flush yet, might form a longer match with upcoming chars
+                        // But only if the remaining buffer (after this sub) hasn't diverged
+                        if (len == translationBuffer.length() && BanglaTranslator.isPrefixOfLongerKey(sub)) {
+                            break; // wait for more input
+                        }
+                    }
+                    output.append(BanglaTranslator.getTranslation(sub));
+                    translationBuffer.delete(0, len);
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched) {
+                // No match for first char, output as-is
+                output.append(translationBuffer.charAt(0));
+                translationBuffer.deleteCharAt(0);
+            }
+        }
+
+        if (output.length() > 0) {
+            ic.commitText(output.toString(), 1);
+        }
+        return output.toString();
+    }
+
+    /**
+     * Flush entire translation buffer as a word-level translation.
+     * Used when space/punctuation is pressed.
+     */
+    private void flushEntireBuffer(InputConnection ic) {
+        if (translationBuffer.length() == 0) return;
+
+        String word = translationBuffer.toString();
+        // Try whole-word match first
+        if (BanglaTranslator.containsKey(word)) {
+            ic.commitText(BanglaTranslator.getTranslation(word), 1);
+        } else {
+            // Fall back to character-by-character
+            ic.commitText(BanglaTranslator.englishToBangla(word), 1);
+        }
+        translationBuffer.setLength(0);
+    }
+
+    /**
+     * Check if the cursor is at the start of a sentence.
+     */
+    private boolean isAtSentenceStart(InputConnection ic) {
+        CharSequence before = ic.getTextBeforeCursor(2, 0);
+        if (before == null || before.length() == 0) return true; // start of field
+        if (before.length() == 1) {
+            char c = before.charAt(0);
+            return c == '\n'; // start of line
+        }
+        // Check for ". " pattern (period + space = sentence end)
+        char last = before.charAt(before.length() - 1);
+        char prev = before.charAt(before.length() - 2);
+        return (prev == '.' && last == ' ') || last == '\n';
     }
 
     // ==================== THEME ====================
@@ -386,10 +519,6 @@ public class CustomKeyboardService extends InputMethodService {
             @Override
             public void onKeyPressed(String label) {
                 String toCommit = isCaps ? letter.toUpperCase(Locale.getDefault()) : letter;
-                int transMode = prefs.getTranslationMode();
-                if (transMode != 0) {
-                    toCommit = BanglaTranslator.translateWord(toCommit, transMode);
-                }
                 commitText(toCommit);
                 if (isCaps && !isShiftLocked) {
                     isCaps = false;
@@ -471,6 +600,10 @@ public class CustomKeyboardService extends InputMethodService {
                                         suggestionsBar.updateSuggestions(currentWord.toString());
                                     }
                                 }
+                                // Update translation buffer
+                                if (translationBuffer.length() > 0) {
+                                    translationBuffer.setLength(translationBuffer.length() - 1);
+                                }
                             }
                             @Override public void onKeyLongPressed(String label) {}
                         });
@@ -483,6 +616,10 @@ public class CustomKeyboardService extends InputMethodService {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
                                 if (ic == null) return;
+                                // Flush translation buffer before enter
+                                if (translationBuffer.length() > 0) {
+                                    flushEntireBuffer(ic);
+                                }
                                 EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
                                 if (ei != null) {
                                     int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
@@ -956,6 +1093,7 @@ public class CustomKeyboardService extends InputMethodService {
         int current = prefs.getTranslationMode();
         int next = (current + 1) % 3;
         prefs.setTranslationMode(next);
+        translationBuffer.setLength(0); // Clear buffer on mode change
         String[] labels = {"Translation OFF", "Bangla → English", "English → Bangla"};
         showToast(labels[next]);
         rebuildToolbar();

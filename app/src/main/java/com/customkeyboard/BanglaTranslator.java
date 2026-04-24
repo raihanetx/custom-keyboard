@@ -390,6 +390,33 @@ public class BanglaTranslator {
         return result.toString();
     }
 
+    /**
+     * Check if the given string is a prefix of any longer key in englishToBangla map.
+     * Used by the translation buffer to decide whether to keep buffering.
+     */
+    public static boolean isPrefixOfLongerKey(String prefix) {
+        for (String key : englishToBangla.keySet()) {
+            if (key.length() > prefix.length() && key.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if the englishToBangla map contains the given key.
+     */
+    public static boolean containsKey(String key) {
+        return englishToBangla.containsKey(key);
+    }
+
+    /**
+     * Get the Bangla translation for an English key.
+     */
+    public static String getTranslation(String key) {
+        return englishToBangla.get(key);
+    }
+
     public static String englishToBangla(String englishText) {
         String lower = englishText.toLowerCase().trim();
         if (englishToBangla.containsKey(lower)) {

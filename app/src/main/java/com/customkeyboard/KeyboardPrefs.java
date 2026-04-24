@@ -15,6 +15,7 @@ public class KeyboardPrefs {
     private static final String KEY_THEME = "theme"; // 0=dark, 1=light, 2=amoled, 3=blue
     private static final String KEY_AUTO_CAP = "auto_capitalize";
     private static final String KEY_HEIGHT_SCALE = "height_scale";
+    private static final String KEY_SUGGESTIONS = "suggestions_enabled";
 
     private final SharedPreferences prefs;
 
@@ -49,7 +50,8 @@ public class KeyboardPrefs {
     public boolean isAutoCapitalize() { return prefs.getBoolean(KEY_AUTO_CAP, true); }
     public void setAutoCapitalize(boolean v) { prefs.edit().putBoolean(KEY_AUTO_CAP, v).apply(); }
 
-    public boolean isSuggestionsEnabled() { return true; }
+    public boolean isSuggestionsEnabled() { return prefs.getBoolean(KEY_SUGGESTIONS, true); }
+    public void setSuggestionsEnabled(boolean v) { prefs.edit().putBoolean(KEY_SUGGESTIONS, v).apply(); }
 
     public float getHeightScale() { return prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f); }
     public void setHeightScale(float scale) { prefs.edit().putFloat(KEY_HEIGHT_SCALE, scale).apply(); }

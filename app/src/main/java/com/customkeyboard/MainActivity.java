@@ -83,6 +83,9 @@ public class MainActivity extends AppCompatActivity {
         addCheckbox(main, "📋 Clipboard History", "Remember copied text for quick access",
             prefs.isClipboardHistoryEnabled(), prefs::setClipboardHistoryEnabled);
 
+        addCheckbox(main, "💡 Word Suggestions", "Show word completions while typing",
+            prefs.isSuggestionsEnabled(), prefs::setSuggestionsEnabled);
+
         addCheckbox(main, "🇧🇩 Bangla Translation", "Show translation button on toolbar",
             prefs.isBanglaTranslationEnabled(), prefs::setBanglaTranslationEnabled);
 
