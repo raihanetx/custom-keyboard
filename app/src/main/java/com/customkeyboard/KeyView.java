@@ -129,11 +129,9 @@ public class KeyView extends TextView {
                 if (isPressed) {
                     setPressed(false);
                     isPressed = false;
-                    // FIX: Only remove THIS key's callbacks, not all main thread callbacks
                     handler.removeCallbacksAndMessages(handlerToken);
-                    if (!hasRepeated && !longPressFired && listener != null) {
-                        listener.onKeyPressed(keyLabel);
-                    }
+                    // Don't call listener here — performClick() handles it
+                    // (avoids double-fire since system calls performClick on UP)
                 }
                 return true;
 
@@ -147,12 +145,14 @@ public class KeyView extends TextView {
         return super.onTouchEvent(event);
     }
 
-    // FIX: Override performClick for accessibility services
-    // Without this, TalkBack and other a11y services can't activate keys.
+    // FIX: Override performClick for accessibility services and normal tap handling.
+    // The system calls this on ACTION_UP (since onTouchEvent returns true).
+    // Accessibility services (TalkBack) also call this directly.
     @Override
     public boolean performClick() {
         super.performClick();
-        if (listener != null) {
+        // Don't fire if the key already repeated (backspace held down) or long-pressed
+        if (!hasRepeated && !longPressFired && listener != null) {
             listener.onKeyPressed(keyLabel);
         }
         return true;

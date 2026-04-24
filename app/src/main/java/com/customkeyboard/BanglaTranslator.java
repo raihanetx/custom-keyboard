@@ -312,7 +312,6 @@ public class BanglaTranslator {
         englishToBangla.put("money", "\u099F\u09BE\u0995\u09BE");  // টাকা
 
         // Feelings
-        englishToBangla.put("kemon", "\u0995\u09C7\u09AE\u09A8");     // কেমন
         englishToBangla.put("kharap", "\u0996\u09BE\u09B0\u09BE\u09AA"); // খারাপ
         englishToBangla.put("khushi", "\u0996\u09C1\u09B6\u09BF");    // খুশি
         englishToBangla.put("happy", "\u0996\u09C1\u09B6\u09BF");     // খুশি

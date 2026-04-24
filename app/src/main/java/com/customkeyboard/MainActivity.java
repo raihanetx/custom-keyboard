@@ -187,53 +187,6 @@ public class MainActivity extends AppCompatActivity {
         groqBox.addView(groqHint);
         main.addView(groqBox);
 
-        // Gemma Voice API Key
-        LinearLayout gemmaBox = settingsBox();
-        TextView gemmaTitle = new TextView(this);
-        gemmaTitle.setText("🧠 Gemma Voice Settings");
-        gemmaTitle.setTextColor(Color.parseColor("#F2F2F7"));
-        gemmaTitle.setTextSize(13);
-        gemmaTitle.setTypeface(null, Typeface.BOLD);
-        gemmaTitle.setPadding(dp(8), dp(4), dp(8), dp(4));
-        gemmaBox.addView(gemmaTitle);
-
-        TextView apiLabel = new TextView(this);
-        apiLabel.setText("Google AI Studio API Key:");
-        apiLabel.setTextColor(Color.parseColor("#CCCCCC"));
-        apiLabel.setTextSize(13);
-        apiLabel.setPadding(dp(8), dp(4), dp(8), dp(4));
-        gemmaBox.addView(apiLabel);
-
-        EditText apiInput = new EditText(this);
-        apiInput.setText(prefs.getGemmaApiKey());
-        apiInput.setTextColor(Color.WHITE);
-        apiInput.setTextSize(13);
-        apiInput.setHint("Paste your API key here");
-        apiInput.setHintTextColor(Color.parseColor("#666666"));
-        apiInput.setBackgroundColor(Color.parseColor("#1C1C1E"));
-        apiInput.setPadding(dp(12), dp(8), dp(12), dp(8));
-        apiInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        LinearLayout.LayoutParams apiLp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        apiLp.setMargins(dp(8), 0, dp(8), dp(8));
-        apiInput.setLayoutParams(apiLp);
-        apiInput.addTextChangedListener(new android.text.TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(android.text.Editable s) {
-                prefs.setGemmaApiKey(s.toString().trim());
-            }
-        });
-        gemmaBox.addView(apiInput);
-
-        TextView apiHint = new TextView(this);
-        apiHint.setText("Get key at aistudio.google.com → Get API key");
-        apiHint.setTextColor(Color.parseColor("#666666"));
-        apiHint.setTextSize(11);
-        apiHint.setPadding(dp(12), 0, dp(8), dp(8));
-        gemmaBox.addView(apiHint);
-        main.addView(gemmaBox);
-
         addCheckbox(main, "📋 Clipboard Access", "Quick paste from toolbar",
             prefs.isClipboardEnabled(), prefs::setClipboardEnabled);
 
