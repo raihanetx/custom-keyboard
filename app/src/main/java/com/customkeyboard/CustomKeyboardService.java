@@ -886,7 +886,7 @@ public class CustomKeyboardService extends InputMethodService {
         if (emojis.length == 0) {
             TextView empty = new TextView(this);
             empty.setText("No recent emojis yet.\nEmojis you use will appear here.");
-            empty.setTextColor(Color.parseColor("#888888"));
+            empty.setTextColor(Color.parseColor("#8E8E93"));
             empty.setTextSize(13);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(32), dp(16), dp(32));
@@ -958,7 +958,7 @@ public class CustomKeyboardService extends InputMethodService {
         if (history.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("No clipboard history yet.\nCopied text will appear here.");
-            empty.setTextColor(Color.parseColor("#888888"));
+            empty.setTextColor(Color.parseColor("#8E8E93"));
             empty.setTextSize(13);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(16), dp(32), dp(16), dp(32));
@@ -1013,7 +1013,7 @@ public class CustomKeyboardService extends InputMethodService {
 
         LinearLayout bottomRow = new LinearLayout(this);
         bottomRow.setPadding(dp(8), dp(4), dp(8), dp(4));
-        KeyView backKey = makeKey("ABC", Color.parseColor("#2A2A4A"), accentColor, true);
+        KeyView backKey = makeKey("ABC", specialKeyColor, specialKeyTextColor, true);
         backKey.setTextSize(13);
         backKey.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
             @Override public void onKeyPressed(String label) { showKeyboard(MODE_QWERTY); }
@@ -1044,9 +1044,9 @@ public class CustomKeyboardService extends InputMethodService {
                     KeyView shiftKey = (KeyView) firstKey;
                     if (shiftKey.getText().toString().equals("⇧")) {
                         shiftKey.updateColors(
-                            isCaps ? accentColor : Color.parseColor("#2A2A4A"),
+                            isCaps ? accentColor : specialKeyColor,
                             pressedColor,
-                            Color.WHITE
+                            isCaps ? Color.WHITE : specialKeyTextColor
                         );
                     }
                 }

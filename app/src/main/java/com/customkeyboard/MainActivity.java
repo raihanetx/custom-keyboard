@@ -99,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
         apiInput.setTextSize(13);
         apiInput.setHint("Paste your API key here");
         apiInput.setHintTextColor(Color.parseColor("#666666"));
-        apiInput.setBackgroundColor(Color.parseColor("#1A1A2E"));
+        apiInput.setBackgroundColor(Color.parseColor("#1C1C1E"));
         apiInput.setPadding(dp(12), dp(8), dp(12), dp(8));
         apiInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         LinearLayout.LayoutParams apiLp = new LinearLayout.LayoutParams(
