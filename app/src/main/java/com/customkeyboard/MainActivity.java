@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
@@ -79,6 +80,48 @@ public class MainActivity extends AppCompatActivity {
 
         addCheckbox(main, "🎤 Voice Typing", "Speech-to-text input via microphone",
             prefs.isVoiceEnabled(), prefs::setVoiceEnabled);
+
+        // Gemma Voice (AI-powered transcription)
+        LinearLayout gemmaBox = settingsBox();
+        addCheckbox(gemmaBox, "🧠 Use Gemma Voice (AI)", "Better transcription via Google AI Studio",
+            prefs.isGemmaVoiceEnabled(), prefs::setGemmaVoiceEnabled);
+
+        TextView apiLabel = new TextView(this);
+        apiLabel.setText("Google AI Studio API Key:");
+        apiLabel.setTextColor(Color.parseColor("#CCCCCC"));
+        apiLabel.setTextSize(13);
+        apiLabel.setPadding(dp(36), dp(4), dp(8), dp(4));
+        gemmaBox.addView(apiLabel);
+
+        EditText apiInput = new EditText(this);
+        apiInput.setText(prefs.getGemmaApiKey());
+        apiInput.setTextColor(Color.WHITE);
+        apiInput.setTextSize(13);
+        apiInput.setHint("Paste your API key here");
+        apiInput.setHintTextColor(Color.parseColor("#666666"));
+        apiInput.setBackgroundColor(Color.parseColor("#1A1A2E"));
+        apiInput.setPadding(dp(12), dp(8), dp(12), dp(8));
+        apiInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout.LayoutParams apiLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        apiLp.setMargins(dp(32), 0, dp(8), dp(8));
+        apiInput.setLayoutParams(apiLp);
+        apiInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                prefs.setGemmaApiKey(s.toString().trim());
+            }
+        });
+        gemmaBox.addView(apiInput);
+
+        TextView apiHint = new TextView(this);
+        apiHint.setText("Get key at aistudio.google.com → Get API key");
+        apiHint.setTextColor(Color.parseColor("#666666"));
+        apiHint.setTextSize(11);
+        apiHint.setPadding(dp(36), 0, dp(8), dp(8));
+        gemmaBox.addView(apiHint);
+        main.addView(gemmaBox);
 
         addCheckbox(main, "📋 Clipboard Access", "Quick paste from toolbar",
             prefs.isClipboardEnabled(), prefs::setClipboardEnabled);

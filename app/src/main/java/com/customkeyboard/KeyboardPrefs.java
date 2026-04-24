@@ -16,6 +16,8 @@ public class KeyboardPrefs {
     private static final String KEY_AUTO_CAP = "auto_capitalize";
     private static final String KEY_HEIGHT_SCALE = "height_scale";
     private static final String KEY_SUGGESTIONS = "suggestions_enabled";
+    private static final String KEY_GEMMA_API_KEY = "gemma_api_key";
+    private static final String KEY_USE_GEMMA_VOICE = "use_gemma_voice";
 
     private final SharedPreferences prefs;
 
@@ -55,4 +57,10 @@ public class KeyboardPrefs {
 
     public float getHeightScale() { return prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f); }
     public void setHeightScale(float scale) { prefs.edit().putFloat(KEY_HEIGHT_SCALE, scale).apply(); }
+
+    public String getGemmaApiKey() { return prefs.getString(KEY_GEMMA_API_KEY, ""); }
+    public void setGemmaApiKey(String key) { prefs.edit().putString(KEY_GEMMA_API_KEY, key).apply(); }
+
+    public boolean isGemmaVoiceEnabled() { return prefs.getBoolean(KEY_USE_GEMMA_VOICE, false); }
+    public void setGemmaVoiceEnabled(boolean v) { prefs.edit().putBoolean(KEY_USE_GEMMA_VOICE, v).apply(); }
 }

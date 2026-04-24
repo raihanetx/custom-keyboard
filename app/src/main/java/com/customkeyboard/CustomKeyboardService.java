@@ -53,6 +53,12 @@ public class CustomKeyboardService extends InputMethodService {
     private Vibrator vibrator;
     private float density;
 
+    // Gemma voice
+    private GemmaVoiceHelper gemmaVoiceHelper;
+    private static String sGemmaApiKey = "";
+
+    public static String getGemmaApiKeyStatic() { return sGemmaApiKey; }
+
     // Views
     private LinearLayout keyboardContainer;
     private LinearLayout toolbarLayout;
@@ -124,6 +130,8 @@ public class CustomKeyboardService extends InputMethodService {
         recentEmoji = new RecentEmoji(this);
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         density = getResources().getDisplayMetrics().density;
+        sGemmaApiKey = prefs.getGemmaApiKey();
+        gemmaVoiceHelper = new GemmaVoiceHelper();
         loadTheme();
     }
 
@@ -178,6 +186,7 @@ public class CustomKeyboardService extends InputMethodService {
         super.onStartInput(attribute, restarting);
         cachedEditorInfo = attribute;
         cachedIC = getCurrentInputConnection();
+        sGemmaApiKey = prefs.getGemmaApiKey();
         if (clipboardHelper != null) clipboardHelper.startListening();
     }
 
@@ -202,6 +211,9 @@ public class CustomKeyboardService extends InputMethodService {
         if (speechRecognizer != null) {
             try { speechRecognizer.destroy(); } catch (Exception ignored) {}
             speechRecognizer = null;
+        }
+        if (gemmaVoiceHelper != null) {
+            gemmaVoiceHelper.stopRecording();
         }
         if (clipboardHelper != null) clipboardHelper.stopListening();
     }
@@ -1043,6 +1055,56 @@ public class CustomKeyboardService extends InputMethodService {
     }
 
     private void startVoiceInput() {
+        // Use Gemma API if enabled and key is set
+        if (prefs.isGemmaVoiceEnabled() && gemmaVoiceHelper != null) {
+            String apiKey = prefs.getGemmaApiKey();
+            if (apiKey == null || apiKey.isEmpty()) {
+                showToast("Set API key in keyboard settings first");
+                return;
+            }
+            sGemmaApiKey = apiKey;
+
+            gemmaVoiceHelper.setCallback(new GemmaVoiceHelper.VoiceCallback() {
+                @Override
+                public void onTranscription(String text) {
+                    skipTranslation = true;
+                    commitText(text + " ", false);
+                    skipTranslation = false;
+                    if (voiceStatusText != null) {
+                        voiceStatusText.setText("✓ " + text);
+                    }
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
+                        isListening = false;
+                    }, 1500);
+                }
+
+                @Override
+                public void onError(String message) {
+                    if (voiceStatusText != null) voiceStatusText.setText(message);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
+                        isListening = false;
+                    }, 2500);
+                }
+
+                @Override
+                public void onRecordingStateChanged(boolean recording) {
+                    if (recording) {
+                        if (voiceStatusText != null) {
+                            voiceStatusText.setText("🎤 Listening (Gemma)...");
+                            voiceStatusText.setVisibility(View.VISIBLE);
+                        }
+                        isListening = true;
+                    }
+                }
+            });
+
+            gemmaVoiceHelper.startRecording();
+            return;
+        }
+
+        // Fallback: Android SpeechRecognizer
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             showToast("Voice recognition not available");
             return;
@@ -1118,6 +1180,14 @@ public class CustomKeyboardService extends InputMethodService {
     }
 
     private void stopVoiceInput() {
+        // Stop Gemma recording if active
+        if (gemmaVoiceHelper != null && gemmaVoiceHelper.isRecording()) {
+            gemmaVoiceHelper.stopRecording();
+            if (voiceStatusText != null) voiceStatusText.setText("Processing...");
+            // isListening will be cleared by the callback
+            return;
+        }
+        // Stop Android SpeechRecognizer
         if (speechRecognizer != null) {
             try { speechRecognizer.stopListening(); } catch (Exception ignored) {}
         }
