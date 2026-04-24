@@ -11,14 +11,20 @@ public class CustomKeyboardService extends InputMethodService
 
     private KeyboardView keyboardView;
     private Keyboard keyboard;
+    private boolean isCaps = false;
 
     @Override
     public View onCreateInputView() {
-        keyboardView = (KeyboardView) getLayoutInflater().inflate(R.layout.keyboard, null);
-        keyboard = new Keyboard(this, R.xml.keyboard);
-        keyboardView.setKeyboard(keyboard);
-        keyboardView.setOnKeyboardActionListener(this);
-        return keyboardView;
+        try {
+            keyboardView = (KeyboardView) getLayoutInflater().inflate(R.layout.keyboard, null);
+            keyboard = new Keyboard(this, R.xml.keyboard);
+            keyboardView.setKeyboard(keyboard);
+            keyboardView.setOnKeyboardActionListener(this);
+            return keyboardView;
+        } catch (Exception e) {
+            // Fallback: return a simple view if keyboard fails
+            return new android.widget.LinearLayout(this);
+        }
     }
 
     @Override
@@ -42,13 +48,13 @@ public class CustomKeyboardService extends InputMethodService
                 ic.performEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
                 break;
             case Keyboard.KEYCODE_SHIFT:
-                // Toggle shift state
-                keyboard.setShifted(!keyboard.isShifted());
+                isCaps = !isCaps;
+                keyboard.setShifted(isCaps);
                 keyboardView.invalidateAllKeys();
                 break;
             default:
                 char code = (char) primaryCode;
-                if (Character.isLetter(code) && keyboard.isShifted()) {
+                if (Character.isLetter(code) && isCaps) {
                     code = Character.toUpperCase(code);
                 }
                 ic.commitText(String.valueOf(code), 1);
