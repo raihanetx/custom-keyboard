@@ -154,7 +154,7 @@ public class GemmaVoiceHelper {
                 body.put("contents", contents);
 
                 // Make API call
-                String model = "gemini-2.0-flash";
+                String model = "gemma-4-31b-it";
                 String urlStr = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
 
                 HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
