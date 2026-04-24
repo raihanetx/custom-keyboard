@@ -83,6 +83,9 @@ public class CustomKeyboardService extends InputMethodService {
 
     // EN→BN translation buffer (accumulates original English chars for word-level matching)
     private StringBuilder translationBuffer = new StringBuilder();
+    // FIX: Track the number of Bangla chars actually committed to the editor
+    // during EN→BN mode, so backspace can delete the correct amount.
+    private int bnCommittedLength = 0;
 
     // Flag to bypass translation (used for suggestion selection, voice input, clipboard paste)
     private boolean skipTranslation = false;
@@ -142,6 +145,7 @@ public class CustomKeyboardService extends InputMethodService {
         letterKeys.clear();
         currentWord.setLength(0);
         translationBuffer.setLength(0);
+        bnCommittedLength = 0; // FIX: Reset BN tracking on view recreation
 
         keyboardContainer = new LinearLayout(this);
         keyboardContainer.setOrientation(LinearLayout.VERTICAL);
@@ -161,6 +165,7 @@ public class CustomKeyboardService extends InputMethodService {
                 skipTranslation = false;
                 currentWord.setLength(0);
                 committedLength = 0;
+                bnCommittedLength = 0; // FIX: Reset BN tracking
                 translationBuffer.setLength(0);
                 suggestionsBar.hide();
             }
@@ -203,6 +208,7 @@ public class CustomKeyboardService extends InputMethodService {
         super.onFinishInput();
         currentWord.setLength(0);
         committedLength = 0;
+        bnCommittedLength = 0; // FIX: Clear BN tracking
         translationBuffer.setLength(0);
     }
 
@@ -214,7 +220,7 @@ public class CustomKeyboardService extends InputMethodService {
             speechRecognizer = null;
         }
         if (gemmaVoiceHelper != null) {
-            gemmaVoiceHelper.stopRecording();
+            gemmaVoiceHelper.release(); // FIX: Use release() for full cleanup (stops recording + cancels API calls)
         }
         if (clipboardHelper != null) clipboardHelper.stopListening();
     }
@@ -264,6 +270,8 @@ public class CustomKeyboardService extends InputMethodService {
                     // BUG FIX: Track English input for suggestions, not Bangla translation
                     currentWord.append(text.toLowerCase(Locale.getDefault()));
                     committedLength += translated.length();
+                    // FIX: Track Bangla chars committed for proper backspace in EN→BN mode
+                    bnCommittedLength += translated.length();
                     if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
                         suggestionsBar.updateSuggestions(currentWord.toString());
                     }
@@ -272,6 +280,7 @@ public class CustomKeyboardService extends InputMethodService {
                     // Non-letter (space, punctuation, etc.) — flush entire buffer first
                     flushEntireBuffer(ic);
                     translationBuffer.setLength(0);
+                    bnCommittedLength = 0; // FIX: Reset BN tracking after word boundary
                     // Then commit the non-letter character as-is
                     ic.commitText(text, 1);
                     if (haptic) performHaptic();
@@ -303,6 +312,7 @@ public class CustomKeyboardService extends InputMethodService {
             } else if (text.equals(" ") || text.equals("\n")) {
                 currentWord.setLength(0);
                 committedLength = 0;
+                bnCommittedLength = 0; // FIX: Reset BN tracking on word boundary
                 if (suggestionsBar != null) suggestionsBar.hide();
             }
         }
@@ -636,15 +646,31 @@ public class CustomKeyboardService extends InputMethodService {
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
-                                if (ic != null) ic.deleteSurroundingText(1, 0);
+                                if (ic == null) return;
+
+                                // FIX: In EN→BN mode, delete the last committed Bangla char(s)
+                                // which may differ from the English buffer length
+                                int transMode = skipTranslation ? 0 : prefs.getTranslationMode();
+                                if (transMode == 2 && translationBuffer.length() > 0) {
+                                    // EN→BN mode with pending buffer
+                                    if (bnCommittedLength > 0) {
+                                        // Delete the last Bangla character from editor
+                                        ic.deleteSurroundingText(1, 0);
+                                        bnCommittedLength--;
+                                    }
+                                    // Also remove last English char from buffer
+                                    if (translationBuffer.length() > 0) {
+                                        translationBuffer.setLength(translationBuffer.length() - 1);
+                                    }
+                                } else {
+                                    ic.deleteSurroundingText(1, 0);
+                                }
+
                                 if (currentWord.length() > 0) {
                                     currentWord.setLength(currentWord.length() - 1);
                                     if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
                                         suggestionsBar.updateSuggestions(currentWord.toString());
                                     }
-                                }
-                                if (translationBuffer.length() > 0) {
-                                    translationBuffer.setLength(translationBuffer.length() - 1);
                                 }
                             }
                             @Override public void onKeyLongPressed(String label) {}
@@ -677,6 +703,7 @@ public class CustomKeyboardService extends InputMethodService {
                                     ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
                                 }
                                 currentWord.setLength(0);
+                                bnCommittedLength = 0; // FIX: Reset BN tracking
                                 if (suggestionsBar != null) suggestionsBar.hide();
                             }
                             @Override public void onKeyLongPressed(String label) {}
@@ -757,12 +784,24 @@ public class CustomKeyboardService extends InputMethodService {
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
-                                if (ic != null) ic.deleteSurroundingText(1, 0);
+                                if (ic == null) return;
+
+                                // FIX: Same EN→BN backspace fix as QWERTY mode
+                                int transMode = skipTranslation ? 0 : prefs.getTranslationMode();
+                                if (transMode == 2 && translationBuffer.length() > 0) {
+                                    if (bnCommittedLength > 0) {
+                                        ic.deleteSurroundingText(1, 0);
+                                        bnCommittedLength--;
+                                    }
+                                    if (translationBuffer.length() > 0) {
+                                        translationBuffer.setLength(translationBuffer.length() - 1);
+                                    }
+                                } else {
+                                    ic.deleteSurroundingText(1, 0);
+                                }
+
                                 if (currentWord.length() > 0) {
                                     currentWord.setLength(currentWord.length() - 1);
-                                }
-                                if (translationBuffer.length() > 0) {
-                                    translationBuffer.setLength(translationBuffer.length() - 1);
                                 }
                             }
                             @Override public void onKeyLongPressed(String label) {}
@@ -775,10 +814,31 @@ public class CustomKeyboardService extends InputMethodService {
                         key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
                             @Override public void onKeyPressed(String label) {
                                 InputConnection ic = getIC();
-                                if (ic != null) {
-                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
-                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                                if (ic == null) return;
+                                // FIX: Flush translation buffer before enter (same as QWERTY)
+                                if (translationBuffer.length() > 0) {
+                                    flushEntireBuffer(ic);
                                 }
+                                // FIX: Handle IME actions (GO, SEARCH, SEND, etc.)
+                                // instead of always sending raw ENTER key event
+                                EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
+                                if (ei != null) {
+                                    int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
+                                    if (action == EditorInfo.IME_ACTION_GO || action == EditorInfo.IME_ACTION_SEARCH ||
+                                        action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_ACTION_NEXT ||
+                                        action == EditorInfo.IME_ACTION_DONE) {
+                                        ic.performEditorAction(action);
+                                        currentWord.setLength(0);
+                                        bnCommittedLength = 0;
+                                        if (suggestionsBar != null) suggestionsBar.hide();
+                                        return;
+                                    }
+                                }
+                                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                                ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                                currentWord.setLength(0);
+                                bnCommittedLength = 0;
+                                if (suggestionsBar != null) suggestionsBar.hide();
                             }
                             @Override public void onKeyLongPressed(String label) {}
                         });
@@ -1062,10 +1122,15 @@ public class CustomKeyboardService extends InputMethodService {
     }
 
     private void startVoiceInput() {
+        // FIX: Set isListening synchronously BEFORE any async operations
+        // to prevent double-starts from rapid tapping
+        isListening = true;
+
         // Use Gemma API if enabled and key is set
         if (prefs.isGemmaVoiceEnabled() && gemmaVoiceHelper != null) {
             String apiKey = prefs.getGemmaApiKey();
             if (apiKey == null || apiKey.isEmpty()) {
+                isListening = false; // FIX: Reset on early exit
                 showToast("Set API key in keyboard settings first");
                 return;
             }
@@ -1102,7 +1167,7 @@ public class CustomKeyboardService extends InputMethodService {
                             voiceStatusText.setText("🎤 Listening (Gemma)...");
                             voiceStatusText.setVisibility(View.VISIBLE);
                         }
-                        isListening = true;
+                        // FIX: isListening is already set synchronously in startVoiceInput()
                     }
                 }
             });
@@ -1113,6 +1178,7 @@ public class CustomKeyboardService extends InputMethodService {
 
         // Fallback: Android SpeechRecognizer
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            isListening = false; // FIX: Reset on early exit
             showToast("Voice recognition not available");
             return;
         }
@@ -1180,8 +1246,9 @@ public class CustomKeyboardService extends InputMethodService {
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             speechRecognizer.startListening(intent);
-            isListening = true;
+            // FIX: isListening already set synchronously at top of method
         } catch (Exception e) {
+            isListening = false; // FIX: Reset on error
             showToast("Could not start voice input");
         }
     }

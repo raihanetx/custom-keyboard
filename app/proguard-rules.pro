@@ -9,6 +9,13 @@
 # Keep SpeechRecognizer
 -keep class android.speech.** { *; }
 
+# FIX: Keep JSON classes — stripped by default, causes crashes when
+# parsing API responses in GemmaVoiceHelper
+-keep class org.json.** { *; }
+
+# Keep HttpURLConnection related classes
+-keep class java.net.** { *; }
+
 # Remove logging in release
 -assumenosideeffects class android.util.Log {
     public static int v(...);

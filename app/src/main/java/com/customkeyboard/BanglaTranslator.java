@@ -326,21 +326,12 @@ public class BanglaTranslator {
         englishToBangla.put("peace", "\u09B6\u09BE\u09A8\u09CD\u09A4\u09BF");  // শান্তি
 
         // Actions
-        englishToBangla.put("jao", "\u09AF\u09BE\u0993");           // যাও
-        englishToBangla.put("go", "\u09AF\u09BE\u0993");             // যাও
-        englishToBangla.put("asho", "\u0986\u09B8\u09CB");           // আসো
-        englishToBangla.put("come", "\u0986\u09B8\u09CB");           // আসো
-        englishToBangla.put("cholo", "\u099A\u09B2\u09CB");          // চলো
-        englishToBangla.put("letsgo", "\u099A\u09B2\u09CB");         // চলো
-        englishToBangla.put("bolo", "\u09AC\u09B2\u09CB");           // বলো
-        englishToBangla.put("say", "\u09AC\u09B2\u09CB");            // বলো
         englishToBangla.put("shono", "\u09B6\u09CB\u09A8\u09CB");    // শোনো
         englishToBangla.put("listen", "\u09B6\u09CB\u09A8\u09CB");   // শোনো
-        englishToBangla.put("dekho", "\u09A6\u09C7\u0996\u09CB");    // দেখো
-        englishToBangla.put("see", "\u09A6\u09C7\u0996\u09CB");      // দেখো
-        englishToBangla.put("help", "\u09B8\u09BE\u09B9\u09BE\u09AF\u09CD\u09AF"); // সাহায্য
-        englishToBangla.put("koro", "\u0995\u09B0\u09CB");           // করো
-        englishToBangla.put("do", "\u0995\u09B0\u09CB");             // করো
+        // "dekho" and "see" already defined above
+        englishToBangla.put("cholo", "\u099A\u09B2\u09CB");          // চলো
+        englishToBangla.put("letsgo", "\u099A\u09B2\u09CB");         // চলো
+        // "help" already defined above
 
         // Numbers & Common
         englishToBangla.put("ekhon", "\u098F\u0996\u09A8");          // এখন

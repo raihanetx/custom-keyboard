@@ -104,12 +104,11 @@ public class SuggestionsBar extends LinearLayout {
         }
 
         setVisibility(View.VISIBLE);
-        addSuggestionChip(currentWord, false);
 
+        // FIX: Don't show current word as first suggestion — it's redundant
+        // since the user already typed it. Only show actual suggestions.
         for (String word : suggestions) {
-            if (!word.equals(currentWord.toLowerCase())) {
-                addSuggestionChip(word, true);
-            }
+            addSuggestionChip(word, true);
         }
     }
 

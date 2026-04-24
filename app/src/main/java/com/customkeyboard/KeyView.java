@@ -6,6 +6,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.Gravity;
@@ -32,13 +34,17 @@ public class KeyView extends TextView {
     private boolean isRepeatable = false;
     private boolean isPressed = false;
     private boolean hasRepeated = false;
+    private boolean longPressFired = false; // FIX: Prevent double long-press
     private OnKeyActionListener listener;
     private Vibrator vibrator;
     private boolean vibrateEnabled = true;
 
     private Runnable repeatRunnable;
     private Runnable longPressRunnable;
-    private android.os.Handler repeatHandler;
+    private final Handler handler;
+    // FIX: Use a dedicated token for this key's callbacks instead of
+    // removeCallbacksAndMessages(null) which nukes ALL main thread callbacks
+    private final Object handlerToken = new Object();
     private static final int REPEAT_DELAY = 400;
     private static final int REPEAT_INTERVAL = 70;
 
@@ -52,7 +58,7 @@ public class KeyView extends TextView {
         this.borderColor = borderColor;
         this.cornerRadius = cornerRadius;
         this.vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
-        this.repeatHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        this.handler = new Handler(Looper.getMainLooper());
 
         setText(label);
         setTextColor(textColor);
@@ -97,6 +103,7 @@ public class KeyView extends TextView {
                 setPressed(true);
                 isPressed = true;
                 hasRepeated = false;
+                longPressFired = false;
                 performHaptic();
 
                 if (isRepeatable) {
@@ -104,25 +111,27 @@ public class KeyView extends TextView {
                         if (isPressed && listener != null) {
                             hasRepeated = true;
                             listener.onKeyPressed(keyLabel);
-                            repeatHandler.postDelayed(repeatRunnable, REPEAT_INTERVAL);
+                            handler.postDelayed(repeatRunnable, handlerToken, REPEAT_INTERVAL);
                         }
                     };
-                    repeatHandler.postDelayed(repeatRunnable, REPEAT_DELAY);
+                    handler.postDelayed(repeatRunnable, handlerToken, REPEAT_DELAY);
                 }
                 longPressRunnable = () -> {
                     if (isPressed && listener != null) {
+                        longPressFired = true;
                         listener.onKeyLongPressed(keyLabel);
                     }
                 };
-                repeatHandler.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout());
+                handler.postDelayed(longPressRunnable, handlerToken, ViewConfiguration.getLongPressTimeout());
                 return true;
 
             case MotionEvent.ACTION_UP:
                 if (isPressed) {
                     setPressed(false);
                     isPressed = false;
-                    repeatHandler.removeCallbacksAndMessages(null);
-                    if (!hasRepeated && listener != null) {
+                    // FIX: Only remove THIS key's callbacks, not all main thread callbacks
+                    handler.removeCallbacksAndMessages(handlerToken);
+                    if (!hasRepeated && !longPressFired && listener != null) {
                         listener.onKeyPressed(keyLabel);
                     }
                 }
@@ -131,16 +140,31 @@ public class KeyView extends TextView {
             case MotionEvent.ACTION_CANCEL:
                 setPressed(false);
                 isPressed = false;
-                repeatHandler.removeCallbacksAndMessages(null);
+                // FIX: Only remove THIS key's callbacks
+                handler.removeCallbacksAndMessages(handlerToken);
                 return true;
         }
         return super.onTouchEvent(event);
     }
 
+    // FIX: Override performClick for accessibility services
+    // Without this, TalkBack and other a11y services can't activate keys.
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        if (listener != null) {
+            listener.onKeyPressed(keyLabel);
+        }
+        return true;
+    }
+
+    // FIX: Don't fire long-press from performLongClick — it's already handled
+    // by the longPressRunnable in onTouchEvent. The system's performLongClick
+    // would cause a double-fire.
     @Override
     public boolean performLongClick() {
         super.performLongClick();
-        if (listener != null) listener.onKeyLongPressed(keyLabel);
+        // Long press is handled by longPressRunnable in onTouchEvent
         return true;
     }
 

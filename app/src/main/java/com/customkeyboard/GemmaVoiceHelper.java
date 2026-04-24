@@ -38,9 +38,12 @@ public class GemmaVoiceHelper {
 
     private AudioRecord audioRecord;
     private volatile boolean isRecording = false;
+    private volatile boolean isSending = false; // FIX: Track API call state
     private Thread recordThread;
+    private Thread apiThread; // FIX: Track API thread for cleanup
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private VoiceCallback callback;
+    private final Object recordLock = new Object(); // FIX: Synchronize audioRecord access
 
     public void setCallback(VoiceCallback callback) {
         this.callback = callback;
@@ -60,28 +63,41 @@ public class GemmaVoiceHelper {
         }
 
         try {
-            audioRecord = new AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE, CHANNEL, ENCODING, bufferSize);
+            synchronized (recordLock) {
+                audioRecord = new AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE, CHANNEL, ENCODING, bufferSize);
 
-            if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
-                notifyError("Failed to initialize audio recorder");
-                return;
+                if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+                    audioRecord.release();
+                    audioRecord = null;
+                    notifyError("Failed to initialize audio recorder");
+                    return;
+                }
             }
 
             isRecording = true;
             notifyRecordingState(true);
 
-            audioRecord.startRecording();
+            synchronized (recordLock) {
+                if (audioRecord != null) audioRecord.startRecording();
+            }
 
             recordThread = new Thread(() -> {
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 byte[] buffer = new byte[bufferSize];
 
                 while (isRecording) {
-                    int read = audioRecord.read(buffer, 0, buffer.length);
+                    int read;
+                    synchronized (recordLock) {
+                        if (audioRecord == null) break;
+                        read = audioRecord.read(buffer, 0, buffer.length);
+                    }
                     if (read > 0) {
                         baos.write(buffer, 0, read);
+                    } else if (read < 0) {
+                        // AudioRecord error
+                        break;
                     }
                 }
 
@@ -107,13 +123,37 @@ public class GemmaVoiceHelper {
         isRecording = false;
         notifyRecordingState(false);
 
-        if (audioRecord != null) {
-            try {
-                audioRecord.stop();
-            } catch (Exception ignored) {}
-            audioRecord.release();
-            audioRecord = null;
+        synchronized (recordLock) {
+            if (audioRecord != null) {
+                try {
+                    audioRecord.stop();
+                } catch (Exception ignored) {}
+                audioRecord.release();
+                audioRecord = null;
+            }
         }
+
+        // Wait for record thread to finish before proceeding
+        if (recordThread != null) {
+            try {
+                recordThread.join(2000);
+            } catch (InterruptedException ignored) {}
+            recordThread = null;
+        }
+    }
+
+    /**
+     * Full cleanup — call when the helper is no longer needed (e.g. onDestroy).
+     */
+    public void release() {
+        stopRecording();
+        // Cancel any in-flight API call
+        if (apiThread != null) {
+            apiThread.interrupt();
+            apiThread = null;
+        }
+        isSending = false;
+        callback = null;
     }
 
     private void sendToApi(byte[] audioData) {
@@ -123,7 +163,15 @@ public class GemmaVoiceHelper {
             return;
         }
 
-        new Thread(() -> {
+        // FIX: Prevent concurrent API calls
+        if (isSending) {
+            notifyError("Already processing previous recording");
+            return;
+        }
+        isSending = true;
+
+        // FIX: Track the thread so we can interrupt it on release()
+        apiThread = new Thread(() -> {
             try {
                 // Convert PCM to WAV in memory
                 byte[] wavData = pcmToWav(audioData, SAMPLE_RATE, 1, 16);
@@ -153,13 +201,15 @@ public class GemmaVoiceHelper {
                 JSONObject body = new JSONObject();
                 body.put("contents", contents);
 
-                // Make API call
+                // FIX: Use Authorization header instead of URL query parameter
+                // (API key in URL can be logged by proxies, servers, etc.)
                 String model = "gemma-4-31b-it";
-                String urlStr = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+                String urlStr = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
 
                 HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("x-goog-api-key", apiKey);
                 conn.setDoOutput(true);
                 conn.setConnectTimeout(15000);
                 conn.setReadTimeout(30000);
@@ -175,6 +225,7 @@ public class GemmaVoiceHelper {
                 byte[] buf = new byte[4096];
                 int n;
                 while ((n = is.read(buf)) != -1) {
+                    if (Thread.interrupted()) break; // FIX: Check for interruption
                     responseStream.write(buf, 0, n);
                 }
                 is.close();
@@ -212,11 +263,18 @@ public class GemmaVoiceHelper {
 
                 notifyError("No transcription returned");
 
+            } catch (InterruptedException e) {
+                // API call was cancelled — silent exit
             } catch (Exception e) {
-                Log.e(TAG, "API call failed", e);
-                notifyError("API call failed: " + e.getMessage());
+                if (!Thread.interrupted()) {
+                    Log.e(TAG, "API call failed", e);
+                    notifyError("API call failed: " + e.getMessage());
+                }
+            } finally {
+                isSending = false;
             }
-        }, "GemmaAPI").start();
+        }, "GemmaAPI");
+        apiThread.start();
     }
 
     /**

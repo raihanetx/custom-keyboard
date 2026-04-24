@@ -49,7 +49,12 @@ public class RecentEmoji {
         String saved = prefs.getString(KEY_RECENT, "");
         if (!saved.isEmpty()) {
             recent.clear();
-            recent.addAll(Arrays.asList(saved.split(SEPARATOR)));
+            for (String s : saved.split(SEPARATOR)) {
+                // FIX: Filter out empty strings from consecutive/trailing separators
+                if (!s.isEmpty()) {
+                    recent.add(s);
+                }
+            }
         }
     }
 
