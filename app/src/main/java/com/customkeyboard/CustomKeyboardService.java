@@ -562,7 +562,7 @@ public class CustomKeyboardService extends InputMethodService {
     // ==================== KEY CREATION ====================
 
     private enum Type {
-        LETTER, CHAR, SHIFT, DELETE, ENTER, SPACE,
+        LETTER, CHAR, SHIFT, DELETE, ENTER,
         MODE_QWERTY, MODE_NUM, DPAD_LEFT, DPAD_RIGHT, TRANSLATE
     }
 
