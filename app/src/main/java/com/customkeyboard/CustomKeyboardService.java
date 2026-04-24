@@ -3,6 +3,7 @@ package com.customkeyboard;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -18,7 +19,6 @@ import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -47,62 +47,64 @@ public class CustomKeyboardService extends InputMethodService {
 
     private KeyboardPrefs prefs;
     private ClipboardHelper clipboardHelper;
+    private RecentEmoji recentEmoji;
     private SpeechRecognizer speechRecognizer;
     private boolean isListening = false;
-
-    private LinearLayout keyboardContainer;
-    private LinearLayout toolbarLayout;
-    private LinearLayout keyboardContent;
-    private TextView voiceStatusText;
     private Vibrator vibrator;
     private float density;
 
+    // Views
+    private LinearLayout keyboardContainer;
+    private LinearLayout toolbarLayout;
+    private LinearLayout keyboardContent;
+    private SuggestionsBar suggestionsBar;
+    private TextView voiceStatusText;
+
     // Colors
-    private int bgColor, keyColor, keyTextColor, accentColor, keyBorderColor, toolbarBg;
+    private int bgColor, keyColor, keyTextColor, accentColor, keyBorderColor, toolbarBg, pressedColor;
 
     // Key sizing
     private int keyHeightPx;
     private int keyMinWidthPx;
+    private int cornerRadiusPx;
 
-    // Stored reference for reliability
+    // Input state
     private InputConnection cachedIC;
     private EditorInfo cachedEditorInfo;
+    private StringBuilder currentWord = new StringBuilder();
 
-    // Key view tracking for shift refresh
-    private final List<TextView> letterKeys = new ArrayList<>();
+    // Key tracking for shift
+    private final List<KeyView> letterKeys = new ArrayList<>();
 
     // Emoji data
     private static final String[] EMOJI_SMILEYS = {
         "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃",
         "😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
-        "🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🫢",
-        "🤫","🤔","🫡","🤐","🤨","😐","😑","😶","🫥","😏",
-        "😒","🙄","😬","🤥","😌","😔","😪","🤤","😴","😷",
-        "🤒","🤕","🤢","🤮","🥵","🥶","🥴","😵","🤯","🤠",
-        "🥳","🥸","😎","🤓","🧐","😕","🫤","😟","🙁","☹️",
-        "😮","😯","😲","😳","🥺","🥹","😦","😧","😨","😰",
-        "😥","😢","😭","😱","😖","😣","😞","😓","😩","😫",
-        "🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩"
+        "🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫",
+        "🤔","🤐","🤨","😐","😑","😶","😏","😒","🙄","😬",
+        "🤥","😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢",
+        "🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","🥸","😎",
+        "🤓","🧐","😕","😟","🙁","😮","😯","😲","😳","🥺",
+        "🥹","😦","😧","😨","😰","😥","😢","😭","😱","😖",
+        "😣","😞","😓","😩","😫","🥱","😤","😡","😠","🤬",
+        "😈","👿","💀","☠️","💩","🤡","👹","👺","👻","👽"
     };
     private static final String[] EMOJI_GESTURES = {
-        "👋","🤚","🖐️","✋","🖖","🫱","🫲","🫳","🫴","👌",
-        "🤌","🤏","✌️","🤞","🫰","🤟","🤘","🤙","👈","👉",
-        "👆","🖕","👇","☝️","🫵","👍","👎","✊","👊","🤛",
-        "🤜","👏","🙌","🫶","👐","🤲","🤝","🙏","✍️","💪"
+        "👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞",
+        "🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍",
+        "👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝",
+        "🙏","✍️","💪","🦾","🦿","🦵","🦶","👂","🦻","👃"
     };
     private static final String[] EMOJI_HEARTS = {
         "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔",
-        "❤️‍🔥","❤️‍🩹","❣️","💕","💞","💓","💗","💖","💘","💝",
-        "💟","☮️","✝️","☪️","🕉️","☸️","🪯","✡️","🔯","🕎",
-        "☯️","☦️","🛐","⛎","♈","♉","♊","♋","♌","♍"
+        "❣️","💕","💞","💓","💗","💖","💘","💝","💟","♥️"
     };
     private static final String[] EMOJI_OBJECTS = {
-        "⚽","🏀","🏈","⚾","🥎","🎾","🏐","🏉","🥏","🎱",
-        "🪀","🏓","🏸","🏒","🏑","🥍","🏏","🪃","🥅","⛳",
-        "🪁","🏹","🎣","🤿","🥊","🥋","🎽","🛹","🛼","🛷",
-        "⛸️","🥌","🎿","⛷️","🏂","🪂","🏋️","🤼","🤸","⛹️",
-        "🎯","🎳","🎮","🕹️","🎰","🎲","🧩","🎭","🎨","🎬",
-        "🎤","🎧","🎼","🎹","🥁","🪘","🎷","🎺","🪗","🎸"
+        "⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱","🏓","🏸",
+        "🏒","🏑","🥍","🏏","🥊","🥋","🎯","🎳","🎮","🕹️",
+        "🎲","🧩","🎭","🎨","🎬","🎤","🎧","🎼","🎹","🥁",
+        "🎷","🎺","🎸","🪗","🎻","🪘","📱","💻","⌨️","🖥️",
+        "📷","📹","🎥","📞","☎️","📺","📻","🎙️","⏰","⏳"
     };
 
     // ==================== LIFECYCLE ====================
@@ -112,6 +114,7 @@ public class CustomKeyboardService extends InputMethodService {
         super.onCreate();
         prefs = new KeyboardPrefs(this);
         clipboardHelper = new ClipboardHelper(this);
+        recentEmoji = new RecentEmoji(this);
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         density = getResources().getDisplayMetrics().density;
         loadTheme();
@@ -121,24 +124,35 @@ public class CustomKeyboardService extends InputMethodService {
     public View onCreateInputView() {
         loadTheme();
         letterKeys.clear();
+        currentWord.setLength(0);
 
         keyboardContainer = new LinearLayout(this);
         keyboardContainer.setOrientation(LinearLayout.VERTICAL);
         keyboardContainer.setBackgroundColor(bgColor);
-        keyboardContainer.setFocusable(true);
-        keyboardContainer.setFocusableInTouchMode(true);
-        keyboardContainer.setClickable(true);
+
+        // Suggestions bar
+        suggestionsBar = new SuggestionsBar(this, accentColor, toolbarBg, keyTextColor);
+        suggestionsBar.setOnSuggestionSelectedListener(word -> {
+            InputConnection ic = getIC();
+            if (ic != null) {
+                // Delete current word, commit suggestion
+                ic.deleteSurroundingText(currentWord.length(), 0);
+                ic.commitText(word + " ", 1);
+                currentWord.setLength(0);
+                suggestionsBar.hide();
+            }
+        });
+        keyboardContainer.addView(suggestionsBar);
 
         // Toolbar
         buildToolbar();
         keyboardContainer.addView(toolbarLayout);
 
-        // Keyboard content area
+        // Keyboard content
         keyboardContent = new LinearLayout(this);
         keyboardContent.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams kcLp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
-        keyboardContent.setLayoutParams(kcLp);
+        keyboardContent.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         keyboardContainer.addView(keyboardContent);
 
         showKeyboard(MODE_QWERTY);
@@ -150,10 +164,7 @@ public class CustomKeyboardService extends InputMethodService {
         super.onStartInput(attribute, restarting);
         cachedEditorInfo = attribute;
         cachedIC = getCurrentInputConnection();
-
-        if (clipboardHelper != null) {
-            clipboardHelper.startListening(null);
-        }
+        if (clipboardHelper != null) clipboardHelper.startListening(null);
     }
 
     @Override
@@ -166,19 +177,25 @@ public class CustomKeyboardService extends InputMethodService {
     @Override
     public void onFinishInput() {
         super.onFinishInput();
-        cachedIC = null;
-        cachedEditorInfo = null;
+        currentWord.setLength(0);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         if (speechRecognizer != null) {
-            speechRecognizer.destroy();
+            try { speechRecognizer.destroy(); } catch (Exception ignored) {}
             speechRecognizer = null;
         }
-        if (clipboardHelper != null) {
-            clipboardHelper.stopListening();
+        if (clipboardHelper != null) clipboardHelper.stopListening();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // Rebuild keyboard on orientation change
+        if (keyboardContainer != null) {
+            onCreateInputView();
         }
     }
 
@@ -186,8 +203,7 @@ public class CustomKeyboardService extends InputMethodService {
 
     private InputConnection getIC() {
         InputConnection ic = getCurrentInputConnection();
-        if (ic == null) ic = cachedIC;
-        return ic;
+        return ic != null ? ic : cachedIC;
     }
 
     private void commitText(String text) {
@@ -199,6 +215,17 @@ public class CustomKeyboardService extends InputMethodService {
         if (ic != null) {
             ic.commitText(text, 1);
             if (haptic) performHaptic();
+
+            // Track current word for suggestions
+            if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
+                currentWord.append(text);
+                if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
+                    suggestionsBar.updateSuggestions(currentWord.toString());
+                }
+            } else if (text.equals(" ") || text.equals("\n")) {
+                currentWord.setLength(0);
+                if (suggestionsBar != null) suggestionsBar.hide();
+            }
         }
     }
 
@@ -206,14 +233,16 @@ public class CustomKeyboardService extends InputMethodService {
 
     private void loadTheme() {
         float scale = prefs.getHeightScale();
-        keyHeightPx = (int)(54 * density * scale);
-        keyMinWidthPx = (int)(32 * density);
+        keyHeightPx = (int)(52 * density * scale);
+        keyMinWidthPx = (int)(30 * density);
+        cornerRadiusPx = (int)(6 * density);
 
         int themeId = prefs.getTheme();
         switch (themeId) {
             case 1: // Light
                 bgColor = Color.parseColor("#F0F0F0");
                 keyColor = Color.parseColor("#FFFFFF");
+                pressedColor = Color.parseColor("#D0D0D0");
                 keyTextColor = Color.parseColor("#1A1A1A");
                 accentColor = Color.parseColor("#E94560");
                 keyBorderColor = Color.parseColor("#CCCCCC");
@@ -222,6 +251,7 @@ public class CustomKeyboardService extends InputMethodService {
             case 2: // AMOLED
                 bgColor = Color.parseColor("#000000");
                 keyColor = Color.parseColor("#111111");
+                pressedColor = Color.parseColor("#333333");
                 keyTextColor = Color.parseColor("#EEEEEE");
                 accentColor = Color.parseColor("#E94560");
                 keyBorderColor = Color.parseColor("#222222");
@@ -230,6 +260,7 @@ public class CustomKeyboardService extends InputMethodService {
             case 3: // Blue
                 bgColor = Color.parseColor("#0D1B2A");
                 keyColor = Color.parseColor("#1B2838");
+                pressedColor = Color.parseColor("#2A3F55");
                 keyTextColor = Color.parseColor("#E0E0E0");
                 accentColor = Color.parseColor("#4FC3F7");
                 keyBorderColor = Color.parseColor("#2A3F55");
@@ -238,6 +269,7 @@ public class CustomKeyboardService extends InputMethodService {
             default: // Dark
                 bgColor = Color.parseColor("#1A1A2E");
                 keyColor = Color.parseColor("#16213E");
+                pressedColor = Color.parseColor("#2A2A4A");
                 keyTextColor = Color.parseColor("#FFFFFF");
                 accentColor = Color.parseColor("#E94560");
                 keyBorderColor = Color.parseColor("#0F3460");
@@ -255,39 +287,37 @@ public class CustomKeyboardService extends InputMethodService {
         toolbarLayout.setGravity(Gravity.CENTER_VERTICAL);
         toolbarLayout.setPadding(dp(4), dp(4), dp(4), dp(4));
 
-        // Wrap in HorizontalScrollView for small screens
-        HorizontalScrollView toolbarScroll = new HorizontalScrollView(this);
-        toolbarScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout toolbarInner = new LinearLayout(this);
-        toolbarInner.setOrientation(LinearLayout.HORIZONTAL);
-        toolbarInner.setGravity(Gravity.CENTER_VERTICAL);
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout inner = new LinearLayout(this);
+        inner.setOrientation(LinearLayout.HORIZONTAL);
+        inner.setGravity(Gravity.CENTER_VERTICAL);
 
         if (prefs.isClipboardEnabled()) {
-            toolbarInner.addView(tb("📋", v -> showKeyboard(MODE_CLIPBOARD)));
+            inner.addView(toolbarBtn("📋", v -> showKeyboard(MODE_CLIPBOARD)));
         }
         if (prefs.isVoiceEnabled()) {
-            toolbarInner.addView(tb("🎤", v -> toggleVoiceInput()));
+            inner.addView(toolbarBtn("🎤", v -> toggleVoiceInput()));
         }
 
-        // Voice status
         voiceStatusText = new TextView(this);
         voiceStatusText.setTextSize(10);
         voiceStatusText.setTextColor(Color.parseColor("#AAAAAA"));
         voiceStatusText.setVisibility(View.GONE);
         voiceStatusText.setPadding(dp(4), 0, dp(4), 0);
-        toolbarInner.addView(voiceStatusText);
+        inner.addView(voiceStatusText);
 
         if (prefs.isBanglaTranslationEnabled()) {
             int mode = prefs.getTranslationMode();
             String label = mode == 1 ? "BN→EN" : mode == 2 ? "EN→BN" : "🌐";
-            toolbarInner.addView(tb(label, v -> cycleTranslationMode()));
+            inner.addView(toolbarBtn(label, v -> cycleTranslationMode()));
         }
 
-        toolbarInner.addView(tb("😊", v -> showKeyboard(MODE_EMOJI)));
-        toolbarInner.addView(tb("123", v -> showKeyboard(MODE_NUMBERS)));
-        toolbarInner.addView(tb("#+=", v -> showKeyboard(MODE_SYMBOLS)));
-        toolbarInner.addView(tb("⚙️", v -> openSettings()));
-        toolbarInner.addView(tb("⌨️", v -> {
+        inner.addView(toolbarBtn("😊", v -> showKeyboard(MODE_EMOJI)));
+        inner.addView(toolbarBtn("123", v -> showKeyboard(MODE_NUMBERS)));
+        inner.addView(toolbarBtn("#+=", v -> showKeyboard(MODE_SYMBOLS)));
+        inner.addView(toolbarBtn("⚙️", v -> openSettings()));
+        inner.addView(toolbarBtn("⌨️", v -> {
             try {
                 android.view.inputmethod.InputMethodManager imm =
                     (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
@@ -295,11 +325,11 @@ public class CustomKeyboardService extends InputMethodService {
             } catch (Exception ignored) {}
         }));
 
-        toolbarScroll.addView(toolbarInner);
-        toolbarLayout.addView(toolbarScroll);
+        scroll.addView(inner);
+        toolbarLayout.addView(scroll);
     }
 
-    private TextView tb(String text, View.OnClickListener listener) {
+    private TextView toolbarBtn(String text, View.OnClickListener listener) {
         TextView btn = new TextView(this);
         btn.setText(text);
         btn.setTextSize(13);
@@ -307,7 +337,7 @@ public class CustomKeyboardService extends InputMethodService {
         btn.setGravity(Gravity.CENTER);
         btn.setPadding(dp(10), dp(6), dp(10), dp(6));
         btn.setOnClickListener(listener);
-        btn.setBackground(roundedBg(keyColor, dp(6)));
+        btn.setBackground(roundedBg(keyColor, cornerRadiusPx));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.setMargins(dp(2), 0, dp(2), 0);
@@ -323,12 +353,76 @@ public class CustomKeyboardService extends InputMethodService {
         letterKeys.clear();
 
         switch (mode) {
-            case MODE_QWERTY:   buildQwerty(); break;
-            case MODE_SYMBOLS:  buildSymbols(); break;
-            case MODE_NUMBERS:  buildNumbers(); break;
-            case MODE_EMOJI:    buildEmoji(); break;
+            case MODE_QWERTY: buildQwerty(); break;
+            case MODE_SYMBOLS: buildSymbols(); break;
+            case MODE_NUMBERS: buildNumbers(); break;
+            case MODE_EMOJI: buildEmoji(); break;
             case MODE_CLIPBOARD: buildClipboard(); break;
         }
+    }
+
+    // ==================== KEY CREATION ====================
+
+    private KeyView makeKey(String label, int normalColor, int textColor, boolean isSpecial) {
+        KeyView key = new KeyView(this, label, normalColor, pressedColor, textColor, keyBorderColor, cornerRadiusPx);
+        key.setTextSize(isSpecial ? 15 : 20);
+        key.setMinimumHeight(keyHeightPx);
+        key.setMinimumWidth(keyMinWidthPx);
+        key.setVibrateEnabled(prefs.isVibrateEnabled());
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
+        lp.setMargins(dp(2), 0, dp(2), 0);
+        key.setLayoutParams(lp);
+
+        return key;
+    }
+
+    private KeyView makeLetterKey(String letter) {
+        String display = isCaps ? letter.toUpperCase(Locale.getDefault()) : letter;
+        KeyView key = makeKey(display, keyColor, keyTextColor, false);
+        letterKeys.add(key);
+
+        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+            @Override
+            public void onKeyPressed(String label) {
+                String toCommit = isCaps ? letter.toUpperCase(Locale.getDefault()) : letter;
+                int transMode = prefs.getTranslationMode();
+                if (transMode != 0) {
+                    toCommit = BanglaTranslator.translateWord(toCommit, transMode);
+                }
+                commitText(toCommit);
+                if (isCaps && !isShiftLocked) {
+                    isCaps = false;
+                    updateShiftState();
+                }
+            }
+            @Override
+            public void onKeyLongPressed(String label) {
+                String lp = getLongPressChar(letter);
+                if (lp != null) commitText(lp);
+            }
+        });
+
+        return key;
+    }
+
+    private KeyView makeCharKey(String ch) {
+        KeyView key = makeKey(ch, keyColor, keyTextColor, false);
+        key.setTextSize(18);
+        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+            @Override public void onKeyPressed(String label) { commitText(ch); }
+            @Override public void onKeyLongPressed(String label) {}
+        });
+        return key;
+    }
+
+    private LinearLayout makeRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        row.setPadding(dp(1), dp(1), dp(1), dp(1));
+        return row;
     }
 
     // ==================== QWERTY ====================
@@ -345,20 +439,115 @@ public class CustomKeyboardService extends InputMethodService {
             LinearLayout row = makeRow();
             for (String k : rowKeys) {
                 switch (k) {
-                    case "⇧":  row.addView(makeKey("⇧", Type.SHIFT, null)); break;
-                    case "⌫":  row.addView(makeKey("⌫", Type.DELETE, null)); break;
-                    case "↵":  row.addView(makeKey("↵", Type.ENTER, null)); break;
-                    case "space": row.addView(makeSpaceKey()); break;
-                    case "123": row.addView(makeKey("123", Type.MODE_NUM, null)); break;
-                    case "🌐": row.addView(makeKey("🌐", Type.TRANSLATE, null)); break;
-                    default:   row.addView(makeLetterKey(k)); break;
+                    case "⇧": {
+                        KeyView key = makeKey("⇧", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        key.updateColors(isCaps ? accentColor : Color.parseColor("#2A2A4A"),
+                                        pressedColor, isCaps ? Color.WHITE : Color.WHITE);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                if (isCaps && !isShiftLocked) isShiftLocked = true;
+                                else if (isShiftLocked) { isCaps = false; isShiftLocked = false; }
+                                else isCaps = true;
+                                updateShiftState();
+                            }
+                            @Override public void onKeyLongPressed(String label) {
+                                isCaps = true; isShiftLocked = true; updateShiftState();
+                            }
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "⌫": {
+                        KeyView key = makeKey("⌫", accentColor, Color.WHITE, true);
+                        key.setRepeatable(true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                InputConnection ic = getIC();
+                                if (ic != null) ic.deleteSurroundingText(1, 0);
+                                // Update current word tracking
+                                if (currentWord.length() > 0) {
+                                    currentWord.setLength(currentWord.length() - 1);
+                                    if (suggestionsBar != null && prefs.isSuggestionsEnabled()) {
+                                        suggestionsBar.updateSuggestions(currentWord.toString());
+                                    }
+                                }
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "↵": {
+                        KeyView key = makeKey("↵", accentColor, Color.WHITE, true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                InputConnection ic = getIC();
+                                if (ic == null) return;
+                                EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
+                                if (ei != null) {
+                                    int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
+                                    if (action == EditorInfo.IME_ACTION_GO || action == EditorInfo.IME_ACTION_SEARCH ||
+                                        action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_ACTION_NEXT ||
+                                        action == EditorInfo.IME_ACTION_DONE) {
+                                        ic.performEditorAction(action);
+                                    } else {
+                                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                                    }
+                                } else {
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                                }
+                                currentWord.setLength(0);
+                                if (suggestionsBar != null) suggestionsBar.hide();
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "space": {
+                        KeyView key = makeKey("Space", keyColor, Color.parseColor("#AAAAAA"), false);
+                        key.setTextSize(12);
+                        key.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3));
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                commitText(" ");
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "123": {
+                        KeyView key = makeKey("123", Color.parseColor("#2A2A4A"), accentColor, true);
+                        key.setTextSize(13);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) { showKeyboard(MODE_NUMBERS); }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "🌐": {
+                        KeyView key = makeKey("🌐", Color.parseColor("#2A2A4A"), accentColor, true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) { cycleTranslationMode(); }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    default:
+                        row.addView(makeLetterKey(k));
+                        break;
                 }
             }
             keyboardContent.addView(row);
         }
     }
 
-    // ==================== SYMBOLS ====================
+    // ==================== SYMBOLS / NUMBERS ====================
 
     private void buildSymbols() {
         String[][] rows = {
@@ -370,15 +559,10 @@ public class CustomKeyboardService extends InputMethodService {
         buildGenericKeyboard(rows);
     }
 
-    // ==================== NUMBERS ====================
-
     private void buildNumbers() {
         String[][] rows = {
-            {"1","2","3"},
-            {"4","5","6"},
-            {"7","8","9"},
-            {".","0","⌫"},
-            {"ABC","◂","▸","space","↵"}
+            {"1","2","3"},{"4","5","6"},{"7","8","9"},
+            {".","0","⌫"},{"ABC","◂","▸","space","↵"}
         };
         buildGenericKeyboard(rows);
     }
@@ -388,13 +572,88 @@ public class CustomKeyboardService extends InputMethodService {
             LinearLayout row = makeRow();
             for (String k : rowKeys) {
                 switch (k) {
-                    case "⌫":  row.addView(makeKey("⌫", Type.DELETE, null)); break;
-                    case "↵":  row.addView(makeKey("↵", Type.ENTER, null)); break;
-                    case "space": row.addView(makeSpaceKey()); break;
-                    case "ABC": row.addView(makeKey("ABC", Type.MODE_QWERTY, null)); break;
-                    case "◂":  row.addView(makeKey("◂", Type.DPAD_LEFT, null)); break;
-                    case "▸":  row.addView(makeKey("▸", Type.DPAD_RIGHT, null)); break;
-                    default:   row.addView(makeCharKey(k)); break;
+                    case "⌫": {
+                        KeyView key = makeKey("⌫", accentColor, Color.WHITE, true);
+                        key.setRepeatable(true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                InputConnection ic = getIC();
+                                if (ic != null) ic.deleteSurroundingText(1, 0);
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "↵": {
+                        KeyView key = makeKey("↵", accentColor, Color.WHITE, true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                InputConnection ic = getIC();
+                                if (ic != null) {
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                                }
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "space": {
+                        KeyView key = makeKey("Space", keyColor, Color.parseColor("#AAAAAA"), false);
+                        key.setTextSize(12);
+                        key.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3));
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) { commitText(" "); }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "ABC": {
+                        KeyView key = makeKey("ABC", Color.parseColor("#2A2A4A"), accentColor, true);
+                        key.setTextSize(13);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) { showKeyboard(MODE_QWERTY); }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "◂": {
+                        KeyView key = makeKey("◂", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                InputConnection ic = getIC();
+                                if (ic != null) {
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT));
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_LEFT));
+                                }
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    case "▸": {
+                        KeyView key = makeKey("▸", Color.parseColor("#2A2A4A"), Color.WHITE, true);
+                        key.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+                            @Override public void onKeyPressed(String label) {
+                                InputConnection ic = getIC();
+                                if (ic != null) {
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
+                                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT));
+                                }
+                            }
+                            @Override public void onKeyLongPressed(String label) {}
+                        });
+                        row.addView(key);
+                        break;
+                    }
+                    default:
+                        row.addView(makeCharKey(k));
+                        break;
                 }
             }
             keyboardContent.addView(row);
@@ -410,21 +669,19 @@ public class CustomKeyboardService extends InputMethodService {
         tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
 
         String[][] emojiSets = {EMOJI_SMILEYS, EMOJI_GESTURES, EMOJI_HEARTS, EMOJI_OBJECTS};
-        String[] labels = {"😀", "👋", "❤️", "⚽", "ABC"};
+        String[] labels = {"😀", "👋", "❤️", "⚽", "🕐", "ABC"};
 
         for (int i = 0; i < labels.length; i++) {
             final int idx = i;
             TextView tab = new TextView(this);
             tab.setText(labels[i]);
-            tab.setTextSize(16);
+            tab.setTextSize(i == 5 ? 13 : 16);
+            if (i == 5) tab.setTextColor(accentColor);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(14), dp(8), dp(14), dp(8));
-            if (i == 4) {
-                tab.setTextColor(accentColor);
-                tab.setTextSize(13);
-            }
             tab.setOnClickListener(v -> {
-                if (idx == 4) showKeyboard(MODE_QWERTY);
+                if (idx == 5) showKeyboard(MODE_QWERTY);
+                else if (idx == 4) showEmojiGrid(recentEmoji.getRecentArray());
                 else showEmojiGrid(emojiSets[idx]);
             });
             tabs.addView(tab);
@@ -436,6 +693,17 @@ public class CustomKeyboardService extends InputMethodService {
     private void showEmojiGrid(String[] emojis) {
         while (keyboardContent.getChildCount() > 1) {
             keyboardContent.removeViewAt(1);
+        }
+
+        if (emojis.length == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("No recent emojis yet.\nEmojis you use will appear here.");
+            empty.setTextColor(Color.parseColor("#888888"));
+            empty.setTextSize(13);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(16), dp(32), dp(16), dp(32));
+            keyboardContent.addView(empty);
+            return;
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -453,7 +721,10 @@ public class CustomKeyboardService extends InputMethodService {
             btn.setGravity(Gravity.CENTER);
             int p = dp(6);
             btn.setPadding(p, p, p, p);
-            btn.setOnClickListener(v -> commitText(emoji));
+            btn.setOnClickListener(v -> {
+                commitText(emoji);
+                recentEmoji.add(emoji);
+            });
 
             GridLayout.LayoutParams params = new GridLayout.LayoutParams();
             params.width = 0;
@@ -494,7 +765,7 @@ public class CustomKeyboardService extends InputMethodService {
         header.addView(clearBtn);
         keyboardContent.addView(header);
 
-        List<ClipData.Item> history = clipboardHelper.getHistory();
+        List<String> history = clipboardHelper.getHistory();
 
         if (history.isEmpty()) {
             TextView empty = new TextView(this);
@@ -513,10 +784,7 @@ public class CustomKeyboardService extends InputMethodService {
             list.setPadding(dp(8), 0, dp(8), dp(4));
 
             for (int i = 0; i < Math.min(history.size(), 15); i++) {
-                ClipData.Item item = history.get(i);
-                CharSequence text = item.getText();
-                if (text == null) continue;
-
+                String text = history.get(i);
                 LinearLayout itemLayout = new LinearLayout(this);
                 itemLayout.setOrientation(LinearLayout.HORIZONTAL);
                 itemLayout.setPadding(dp(10), dp(8), dp(10), dp(8));
@@ -527,8 +795,7 @@ public class CustomKeyboardService extends InputMethodService {
                 itemLayout.setLayoutParams(itemLp);
 
                 TextView clipText = new TextView(this);
-                String display = text.toString();
-                if (display.length() > 120) display = display.substring(0, 120) + "…";
+                String display = text.length() > 120 ? text.substring(0, 120) + "…" : text;
                 clipText.setText(display);
                 clipText.setTextColor(keyTextColor);
                 clipText.setTextSize(13);
@@ -542,7 +809,7 @@ public class CustomKeyboardService extends InputMethodService {
                 pasteBtn.setTextSize(12);
                 pasteBtn.setTypeface(null, Typeface.BOLD);
                 pasteBtn.setPadding(dp(8), 0, 0, 0);
-                final String clipContent = text.toString();
+                final String clipContent = text;
                 pasteBtn.setOnClickListener(v -> commitText(clipContent));
                 itemLayout.addView(pasteBtn);
 
@@ -552,254 +819,27 @@ public class CustomKeyboardService extends InputMethodService {
             keyboardContent.addView(scroll);
         }
 
-        // Back button row
         LinearLayout bottomRow = new LinearLayout(this);
         bottomRow.setPadding(dp(8), dp(4), dp(8), dp(4));
-        bottomRow.addView(makeKey("ABC", Type.MODE_QWERTY, null));
+        KeyView backKey = makeKey("ABC", Color.parseColor("#2A2A4A"), accentColor, true);
+        backKey.setTextSize(13);
+        backKey.setOnKeyActionListener(new KeyView.OnKeyActionListener() {
+            @Override public void onKeyPressed(String label) { showKeyboard(MODE_QWERTY); }
+            @Override public void onKeyLongPressed(String label) {}
+        });
+        bottomRow.addView(backKey);
         keyboardContent.addView(bottomRow);
-    }
-
-    // ==================== KEY CREATION ====================
-
-    private enum Type {
-        LETTER, CHAR, SHIFT, DELETE, ENTER,
-        MODE_QWERTY, MODE_NUM, DPAD_LEFT, DPAD_RIGHT, TRANSLATE
-    }
-
-    private LinearLayout makeRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1);
-        lp.setMargins(dp(2), dp(1), dp(2), dp(1));
-        row.setLayoutParams(lp);
-        return row;
-    }
-
-    private TextView makeLetterKey(String letter) {
-        TextView key = new TextView(this);
-        key.setText(isCaps ? letter.toUpperCase(Locale.getDefault()) : letter);
-        key.setTextSize(20);
-        key.setTextColor(keyTextColor);
-        key.setGravity(Gravity.CENTER);
-        key.setBackground(roundedBg(keyColor, dp(6)));
-        key.setMinimumWidth(keyMinWidthPx);
-        key.setMinimumHeight(keyHeightPx);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
-        lp.setMargins(dp(2), 0, dp(2), 0);
-        key.setLayoutParams(lp);
-
-        letterKeys.add(key);
-
-        key.setOnClickListener(v -> {
-            String toCommit = isCaps ? letter.toUpperCase(Locale.getDefault()) : letter;
-            int transMode = prefs.getTranslationMode();
-            if (transMode != 0) {
-                toCommit = BanglaTranslator.translateWord(toCommit, transMode);
-            }
-            commitText(toCommit);
-
-            // Auto-undo shift after one keypress
-            if (isCaps && !isShiftLocked) {
-                isCaps = false;
-                updateShiftState();
-            }
-        });
-
-        key.setOnLongClickListener(v -> {
-            String lp2 = getLongPressChar(letter);
-            if (lp2 != null) commitText(lp2);
-            return true;
-        });
-
-        return key;
-    }
-
-    private TextView makeCharKey(String ch) {
-        TextView key = new TextView(this);
-        key.setText(ch);
-        key.setTextSize(18);
-        key.setTextColor(keyTextColor);
-        key.setGravity(Gravity.CENTER);
-        key.setBackground(roundedBg(keyColor, dp(6)));
-        key.setMinimumWidth(keyMinWidthPx);
-        key.setMinimumHeight(keyHeightPx);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
-        lp.setMargins(dp(2), 0, dp(2), 0);
-        key.setLayoutParams(lp);
-
-        key.setOnClickListener(v -> commitText(ch));
-        return key;
-    }
-
-    private TextView makeKey(String label, Type type, View.OnClickListener custom) {
-        TextView key = new TextView(this);
-        key.setText(label);
-        key.setTextSize(15);
-        key.setGravity(Gravity.CENTER);
-        key.setMinimumHeight(keyHeightPx);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
-        lp.setMargins(dp(2), 0, dp(2), 0);
-        key.setLayoutParams(lp);
-
-        switch (type) {
-            case SHIFT:
-                key.setTextColor(isCaps ? accentColor : Color.WHITE);
-                key.setBackground(roundedBg(isCaps ? accentColor : Color.parseColor("#2A2A4A"), dp(6)));
-                key.setOnClickListener(v -> {
-                    if (isCaps && !isShiftLocked) {
-                        isShiftLocked = true;
-                    } else if (isShiftLocked) {
-                        isCaps = false;
-                        isShiftLocked = false;
-                    } else {
-                        isCaps = true;
-                    }
-                    updateShiftState();
-                });
-                break;
-            case DELETE:
-                key.setTextColor(Color.WHITE);
-                key.setBackground(roundedBg(accentColor, dp(6)));
-                key.setOnClickListener(v -> {
-                    InputConnection ic = getIC();
-                    if (ic != null) {
-                        ic.deleteSurroundingText(1, 0);
-                        performHaptic();
-                    }
-                });
-                // Long press repeat
-                key.setOnLongClickListener(v -> {
-                    Handler h = new Handler(Looper.getMainLooper());
-                    Runnable repeat = new Runnable() {
-                        @Override public void run() {
-                            InputConnection ic = getIC();
-                            if (ic != null) ic.deleteSurroundingText(1, 0);
-                            h.postDelayed(this, 80);
-                        }
-                    };
-                    h.postDelayed(repeat, 400);
-                    key.setOnTouchListener((vv, event) -> {
-                        if (event.getAction() == MotionEvent.ACTION_UP ||
-                            event.getAction() == MotionEvent.ACTION_CANCEL) {
-                            h.removeCallbacksAndMessages(null);
-                        }
-                        return false;
-                    });
-                    return true;
-                });
-                break;
-            case ENTER:
-                key.setTextColor(Color.WHITE);
-                key.setBackground(roundedBg(accentColor, dp(6)));
-                key.setOnClickListener(v -> {
-                    InputConnection ic = getIC();
-                    if (ic == null) return;
-                    EditorInfo ei = cachedEditorInfo != null ? cachedEditorInfo : getCurrentInputEditorInfo();
-                    if (ei != null) {
-                        int action = ei.imeOptions & EditorInfo.IME_MASK_ACTION;
-                        if (action == EditorInfo.IME_ACTION_GO ||
-                            action == EditorInfo.IME_ACTION_SEARCH ||
-                            action == EditorInfo.IME_ACTION_SEND ||
-                            action == EditorInfo.IME_ACTION_NEXT ||
-                            action == EditorInfo.IME_ACTION_DONE) {
-                            ic.performEditorAction(action);
-                        } else {
-                            ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
-                            ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
-                        }
-                    } else {
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
-                    }
-                    performHaptic();
-                });
-                break;
-            case MODE_QWERTY:
-                key.setTextColor(accentColor);
-                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
-                key.setOnClickListener(v -> showKeyboard(MODE_QWERTY));
-                break;
-            case MODE_NUM:
-                key.setTextColor(accentColor);
-                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
-                key.setOnClickListener(v -> showKeyboard(MODE_NUMBERS));
-                break;
-            case TRANSLATE:
-                key.setTextColor(accentColor);
-                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
-                key.setOnClickListener(v -> cycleTranslationMode());
-                break;
-            case DPAD_LEFT:
-                key.setTextColor(Color.WHITE);
-                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
-                key.setOnClickListener(v -> {
-                    InputConnection ic = getIC();
-                    if (ic != null) {
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT));
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_LEFT));
-                        performHaptic();
-                    }
-                });
-                break;
-            case DPAD_RIGHT:
-                key.setTextColor(Color.WHITE);
-                key.setBackground(roundedBg(Color.parseColor("#2A2A4A"), dp(6)));
-                key.setOnClickListener(v -> {
-                    InputConnection ic = getIC();
-                    if (ic != null) {
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
-                        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT));
-                        performHaptic();
-                    }
-                });
-                break;
-        }
-
-        if (custom != null) {
-            key.setOnClickListener(custom);
-        }
-
-        return key;
-    }
-
-    private TextView makeSpaceKey() {
-        TextView key = new TextView(this);
-
-        int transMode = prefs.getTranslationMode();
-        if (transMode == 1) key.setText("🌐 Bangla → English");
-        else if (transMode == 2) key.setText("🌐 English → Bangla");
-        else key.setText("Space");
-
-        key.setTextSize(12);
-        key.setTextColor(Color.parseColor("#AAAAAA"));
-        key.setGravity(Gravity.CENTER);
-        key.setBackground(roundedBg(keyColor, dp(6)));
-        key.setMinimumHeight(keyHeightPx);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 3);
-        lp.setMargins(dp(2), 0, dp(2), 0);
-        key.setLayoutParams(lp);
-
-        key.setOnClickListener(v -> commitText(" "));
-        return key;
     }
 
     // ==================== SHIFT STATE ====================
 
     private void updateShiftState() {
-        // Update letter key labels without rebuilding the whole keyboard
-        for (TextView key : letterKeys) {
+        for (KeyView key : letterKeys) {
             String text = key.getText().toString();
             if (text.length() == 1 && Character.isLetter(text.charAt(0))) {
-                key.setText(isCaps ? text.toUpperCase(Locale.getDefault()) : text.toLowerCase(Locale.getDefault()));
+                key.updateLabel(isCaps ? text.toUpperCase(Locale.getDefault()) : text.toLowerCase(Locale.getDefault()));
             }
         }
-
-        // Update shift key appearance
         updateShiftKeyVisual();
     }
 
@@ -808,11 +848,14 @@ public class CustomKeyboardService extends InputMethodService {
             View thirdRow = keyboardContent.getChildAt(2);
             if (thirdRow instanceof LinearLayout) {
                 View firstKey = ((LinearLayout) thirdRow).getChildAt(0);
-                if (firstKey instanceof TextView) {
-                    TextView shiftKey = (TextView) firstKey;
+                if (firstKey instanceof KeyView) {
+                    KeyView shiftKey = (KeyView) firstKey;
                     if (shiftKey.getText().toString().equals("⇧")) {
-                        shiftKey.setTextColor(isCaps ? accentColor : Color.WHITE);
-                        shiftKey.setBackground(roundedBg(isCaps ? accentColor : Color.parseColor("#2A2A4A"), dp(6)));
+                        shiftKey.updateColors(
+                            isCaps ? accentColor : Color.parseColor("#2A2A4A"),
+                            pressedColor,
+                            Color.WHITE
+                        );
                     }
                 }
             }
@@ -828,12 +871,14 @@ public class CustomKeyboardService extends InputMethodService {
 
     private void startVoiceInput() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            showToast("Voice recognition not available on this device");
+            showToast("Voice recognition not available");
             return;
         }
 
         try {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            if (speechRecognizer == null) {
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            }
             speechRecognizer.setRecognitionListener(new RecognitionListener() {
                 @Override public void onReadyForSpeech(Bundle params) {
                     if (voiceStatusText != null) {
@@ -869,7 +914,7 @@ public class CustomKeyboardService extends InputMethodService {
                     ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (matches != null && !matches.isEmpty()) {
                         String text = matches.get(0);
-                        commitText(text + " ", false); // no haptic for voice
+                        commitText(text + " ", false);
                         if (voiceStatusText != null) voiceStatusText.setText("✓ " + text);
                     }
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -894,17 +939,13 @@ public class CustomKeyboardService extends InputMethodService {
             speechRecognizer.startListening(intent);
             isListening = true;
         } catch (Exception e) {
-            showToast("Could not start voice input: " + e.getMessage());
+            showToast("Could not start voice input");
         }
     }
 
     private void stopVoiceInput() {
         if (speechRecognizer != null) {
-            try {
-                speechRecognizer.stopListening();
-                speechRecognizer.destroy();
-            } catch (Exception ignored) {}
-            speechRecognizer = null;
+            try { speechRecognizer.stopListening(); } catch (Exception ignored) {}
         }
         isListening = false;
         if (voiceStatusText != null) voiceStatusText.setVisibility(View.GONE);
@@ -925,7 +966,8 @@ public class CustomKeyboardService extends InputMethodService {
         if (keyboardContainer != null) {
             keyboardContainer.removeView(toolbarLayout);
             buildToolbar();
-            keyboardContainer.addView(toolbarLayout, 0);
+            // Insert toolbar after suggestions bar (index 1)
+            keyboardContainer.addView(toolbarLayout, 1);
         }
     }
 
@@ -955,9 +997,9 @@ public class CustomKeyboardService extends InputMethodService {
         if (prefs.isVibrateEnabled() && vibrator != null) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE));
+                    vibrator.vibrate(VibrationEffect.createOneShot(12, VibrationEffect.DEFAULT_AMPLITUDE));
                 } else {
-                    vibrator.vibrate(15);
+                    vibrator.vibrate(12);
                 }
             } catch (Exception ignored) {}
         }
