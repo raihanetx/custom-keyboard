@@ -5,9 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_alignParentBottom="true"
-    android:keyBackground="#16213e"
+    android:keyBackground="@drawable/key_bg"
     android:keyTextColor="#ffffff"
     android:keyTextSize="22sp"
-    android:background="#0f3460"
+    android:background="@drawable/keyboard_bg"
     android:paddingTop="4dp"
     android:paddingBottom="4dp" />
