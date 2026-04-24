@@ -902,7 +902,6 @@ public class CustomKeyboardService extends InputMethodService {
                         case SpeechRecognizer.ERROR_AUDIO: msg = "Audio error"; break;
                         case SpeechRecognizer.ERROR_NETWORK: msg = "Network error"; break;
                         default: msg = "Error " + error;
-                        default: msg = "Error " + error;
                     }
                     if (voiceStatusText != null) voiceStatusText.setText(msg);
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
