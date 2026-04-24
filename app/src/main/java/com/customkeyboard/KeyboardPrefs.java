@@ -86,19 +86,24 @@ public class KeyboardPrefs {
      */
     public String detectLanguage(android.view.inputmethod.EditorInfo ei) {
         if (ei != null) {
-            String locale = null;
+            // getHintLocales() requires API 24+, use reflection to avoid compile error
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                android.os.LocaleList locales = ei.getHintLocales();
-                if (locales != null && locales.size() > 0) {
-                    locale = locales.get(0).getLanguage();
-                }
-            }
-            if (locale == null && ei.inputType != 0) {
-                // Fallback: check imeOptions or extras
-                locale = "";
-            }
-            if ("bn".equals(locale) || "bn_BD".equals(locale) || "bn_IN".equals(locale)) {
-                return "bn";
+                try {
+                    java.lang.reflect.Method m = ei.getClass().getMethod("getHintLocales");
+                    Object locales = m.invoke(ei);
+                    if (locales != null) {
+                        java.lang.reflect.Method sizeMethod = locales.getClass().getMethod("size");
+                        int size = (int) sizeMethod.invoke(locales);
+                        if (size > 0) {
+                            java.lang.reflect.Method getMethod = locales.getClass().getMethod("get", int.class);
+                            java.util.Locale locale = (java.util.Locale) getMethod.invoke(locales, 0);
+                            if (locale != null) {
+                                String lang = locale.getLanguage();
+                                if ("bn".equals(lang)) return "bn";
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
             }
         }
         return "en";
